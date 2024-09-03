@@ -1,0 +1,19 @@
+{
+  "watch": {
+    "search": [
+      "corpus*.json",
+      "_build/site/**"
+    ]
+  },
+  "scripts": {
+    "search": "node search.js",
+    "watch": "npm-watch"
+  },
+  "dependencies": {
+    "fuse.js": "^7.0.0",
+    "glob": "^11.0.0"
+  },
+  "devDependencies": {
+    "npm-watch": "^0.13.0"
+  }
+}
