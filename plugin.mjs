@@ -112,10 +112,6 @@ function filterSearchAST(results) {
 }
 
 function highlightMatchedNodes(ast, nodeStart, nodeStop, start, stop) {
-  console.log(
-    JSON.stringify({ ast, nodeStart, nodeStop, start, stop }, null, 2),
-  );
-
   // Special case match only in single node;
   switch (ast.length) {
     case 1:
@@ -233,7 +229,6 @@ const plugin = {
 
         const fuse = new Fuse(entries, options);
         searchNodes.forEach((node) => {
-          console.log(node);
           const results = fuse.search(node.query);
           const tableChildren = filterSearchAST(results).map(
             ({ title, nodes }) => {
@@ -291,7 +286,8 @@ const plugin = {
           };
           const asideTitle = {
             type: "admonitionTitle",
-            children: [{ type: "text", value: `Search for ${node.query}` }],
+            children: [
+		    { type: "text", value: `Search for '${node.query}'` }],
           };
           const aside = {
             type: "aside",
@@ -299,7 +295,6 @@ const plugin = {
             children: [asideTitle, table],
           };
           node.children = [aside];
-          console.log(table);
         });
       },
     },
