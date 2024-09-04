@@ -1,5 +1,5 @@
 # Search
 
 
-:::{search} semper eleifend
+:::{search} semper
 :::
