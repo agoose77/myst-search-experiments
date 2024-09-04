@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { globSync } from "glob";
-import Fuse from "fuse.js";
+import MiniSearch from "minisearch";
 
 function toTextNode(content, accumulator, path) {
   if ("value" in content && content.value) {
@@ -203,10 +203,10 @@ const plugin = {
         };
         const data = JSON.stringify(entry, null, 2);
         const digest = createHash("md5").update(data).digest("hex");
-
+        const writeData = JSON.stringify({ digest, ...entry }, null, 2);
         rmSync("_build/search", { force: true, recursive: true });
         mkdirSync("_build/search", { recursive: true });
-        writeFileSync(`_build/search/corpus-${digest}.json`, data);
+        writeFileSync(`_build/search/corpus-${digest}.json`, writeData);
       },
     },
     {
@@ -218,41 +218,136 @@ const plugin = {
 
         const searchNodes = utils.selectAll("search", node);
 
-        const options = {
-          includeScore: true,
-          includeMatches: true,
-          minMatchCharLength: 2,
-          ignoreLocation: true,
-          // Search in `author` and in `tags` array
-          keys: ["corpus"],
-        };
+        const miniSearch = new MiniSearch({
+          fields: ["title", "corpus"],
+          storeFields: ["title", "corpus", "ast", "index"],
+          idField: "digest",
+        });
+        const digestToEntry = new Map(
+          entries.map((entry) => [entry.digest, entry]),
+        );
+        miniSearch.addAll(entries);
 
-        const fuse = new Fuse(entries, options);
         searchNodes.forEach((node) => {
-          const results = fuse.search(node.query);
-          const tableChildren = filterSearchAST(results).map(
-            ({ title, nodes }) => {
-              return {
-                type: "tableRow",
-                children: [
-                  {
-                    type: "tableCell",
-                    children: [
-                      {
-                        type: "text",
-                        value: title,
-                      },
-                    ],
-                  },
-                  {
-                    type: "tableCell",
-                    children: nodes,
-                  },
-                ],
-              };
-            },
-          );
+          const searchResults = miniSearch.search(node.query, { fuzzy: 0.2 });
 
+          const renderResults = [];
+
+          searchResults.forEach((result) => {
+            const { title, ast, index, digest } = result;
+
+            result.terms.forEach((term) => {
+              // For each search term, build a case-insensitive regexp
+              const pattern = new RegExp(`(${term})`, "gi");
+              // For each true match
+              result.match[term].forEach((field) => {
+                const fieldValue = result[field];
+                console.log(term, field);
+                switch (field) {
+                  case "title":
+                    const titleMatches = fieldValue.matchAll(pattern);
+                    titleMatches.forEach((match) => {
+                      const start = match.index;
+                      const stop = match.index + match[0].length;
+                      const nodes = [
+                        {
+                          type: "text",
+                          value: fieldValue.slice(0, start),
+                        },
+                        {
+                          type: "strong",
+                          children: [
+                            {
+                              type: "text",
+                              value: fieldValue.slice(start, stop),
+                            },
+                          ],
+                        },
+                        {
+                          type: "text",
+                          value: fieldValue.slice(stop, fieldValue.length),
+                        },
+                      ];
+                      renderResults.push({
+                        title,
+                        digest,
+                        nodes,
+                        text: match[0],
+                        field,
+                      });
+                    });
+                    break;
+                  case "corpus":
+                    // Find term in corpus
+                    const corpusMatches = fieldValue.matchAll(pattern);
+                    corpusMatches.forEach((match) => {
+                      const start = match.index;
+                      const stop = match.index + match[0].length;
+                      // Locate AST node that contributed the text fragment to the search
+                      // corpus that spans fragStart <= start < fragStop
+                      const stops = index.map((x) => x.stop);
+                      const paths = index.map((x) => x.path);
+
+                      const startIndex = bisectLeft(stops, start);
+                      const stopIndex = bisectLeft(stops, stop + 1);
+                      const matchPaths = paths.slice(startIndex, stopIndex + 1);
+                      const matchMdast = matchPaths.map((p) =>
+                        dereferencePath(ast, p),
+                      );
+
+                      // Print result
+                      const highlighted = highlightMatchedNodes(
+                        matchMdast,
+                        stops[startIndex - 1] ?? 0,
+                        stops[stopIndex],
+                        start,
+                        stop,
+                      );
+                      renderResults.push({
+                        title,
+                        digest,
+                        nodes: highlighted,
+                        text: match[0],
+                        field,
+                      });
+                    });
+                    //			const nodes = highlightMatchedNodes
+                    break;
+                  default:
+                    break;
+                }
+              });
+            });
+          });
+          const tableChildren = renderResults.map(({ title, field, nodes }) => {
+            return {
+              type: "tableRow",
+              children: [
+                {
+                  type: "tableCell",
+                  children: [
+                    {
+                      type: "text",
+                      value: title,
+                    },
+                  ],
+                },
+                {
+                  type: "tableCell",
+                  children: [
+                    {
+                      type: "text",
+                      value: field,
+                    },
+                  ],
+                },
+                {
+                  type: "tableCell",
+                  children: nodes,
+                },
+              ],
+            };
+          });
           const table = {
             type: "table",
             children: [
@@ -275,6 +370,17 @@ const plugin = {
                     children: [
                       {
                         type: "text",
+                        value: "Kind",
+                      },
+                    ],
+                  },
+
+                  {
+                    type: "tableCell",
+                    header: true,
+                    children: [
+                      {
+                        type: "text",
                         value: "Result",
                       },
                     ],
@@ -286,8 +392,7 @@ const plugin = {
           };
           const asideTitle = {
             type: "admonitionTitle",
-            children: [
-		    { type: "text", value: `Search for '${node.query}'` }],
+            children: [{ type: "text", value: `Search for '${node.query}'` }],
           };
           const aside = {
             type: "aside",

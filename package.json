@@ -1,7 +1,6 @@
 {
   "dependencies": {
-    "fuse.js": "^7.0.0",
-    "glob": "^11.0.0"
-  },
-  "devDependencies": {}
+    "glob": "^11.0.0",
+    "minisearch": "^7.1.0"
+  }
 }
