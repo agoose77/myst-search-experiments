@@ -67,6 +67,7 @@ const plugin = {
         writeFileSync(`_build/search/corpus-${digest}.json`, writeData);
       },
     },
+    // TODO split by heading
     {
       name: "apply-search",
       stage: "document",
@@ -85,7 +86,11 @@ const plugin = {
         // For each search node, perform query
         const searchNodes = utils.selectAll("search", node);
         searchNodes.forEach((node) => {
-          const searchResults = miniSearch.search(node.query, { fuzzy: 0.2 });
+          const searchResults = miniSearch.search(node.query, {
+            fuzzy: 0.2,
+            combineWith: "AND",
+            boost: { title: 2 },
+          });
 
           const renderResults = [];
 
@@ -159,7 +164,7 @@ const plugin = {
                     //			const nodes = highlightMatchedNodes
                     break;
                   default:
-				throw new Error("unexpected case");
+                    throw new Error("unexpected case");
                     break;
                 }
               });
