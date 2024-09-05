@@ -1,25 +1,40 @@
-function toTextNode(content, accumulator, path) {
-  if ("value" in content && content.value) {
-    accumulator.push({ path, content: content.value });
+export const SKIP = () => {};
+
+function visitNode(content, visitor, path) {
+  const result = visitor(content, path);
+  if (result !== undefined && result === SKIP) {
+    return;
+  }
+  if ("value" in content) {
     return;
   } else if ("children" in content && content.children) {
-    toTextArray(content.children, accumulator, `${path}.`);
+    visitNodeArray(content.children, visitor, `${path}.`);
   }
 }
 
-function toTextArray(content, accumulator, path) {
+function visitNodeArray(content, visitor, path) {
   content.forEach((n, i) => {
-    toTextNode(n, accumulator, `${path}${i}`);
+    visitNode(n, visitor, `${path}${i}`);
   });
 }
 
-export function toText(content) {
-  const accumulator = [];
+export function walk(content, visitor, basePath) {
+  const path = basePath ?? "$";
   if (Array.isArray(content)) {
-    toTextArray(content, accumulator, "$");
+    visitNodeArray(content, visitor, path);
   } else {
-    toTextNode(content, accumulator, "$");
+    visitNode(content, visitor, path);
   }
+}
+
+export function toText(content, basePath) {
+  const accumulator = [];
+  const visitor = (content, path) => {
+    if ("value" in content && content.value) {
+      accumulator.push({ path, content: content.value });
+    }
+  };
+  walk(content, visitor, basePath);
   return accumulator;
 }
 
