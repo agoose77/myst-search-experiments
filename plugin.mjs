@@ -1,9 +1,9 @@
-import { writeFileSync, readFileSync, rmSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { globSync } from "glob";
 import MiniSearch from "minisearch";
-import { walk, SKIP, toText, bisectLeft, resolveToTextPath } from "./utils.mjs";
-import { highlightLiteralMatch } from "./highlight.mjs";
+import { walk, SKIP, bisectLeft, resolveToTextPath } from "./utils.mjs";
+import { sectionTransform } from "myst-to-jats";
 
 const searchDirective = {
   name: "search",
@@ -16,24 +16,75 @@ const searchDirective = {
   },
 };
 
-function makeASTDocument(nodes, basePath, documentDigest) {
-  // Convert AST tree to flat array of text-path items
-  const parts = toText(nodes, basePath);
+function makeASTDocument(nodes, documentDigest) {
+  const toSectionedText = (content) => {
+    const contexts = [];
+    // Build separate corpus entries to preserve structure
+    const pushContext = (heading) => {
+      const index = contexts.length - 1;
+      const headingInfo = heading
+        ? {
+            text: heading.children[0].value,
+            id: heading["html-id"] || heading.identifier,
+            index: index,
+          }
+        : {
+            index: index,
+          };
+      contexts.push({
+        heading: headingIno,
+        accumulator: [],
+      });
+    };
+    // Create section for root document
+    pushContext(undefined);
+
+    const visitor = (content, path) => {
+      // Keep track of current heading
+      if (content.type === "section") {
+        pushContext(content);
+      }
+      // Don't add headings to corpus
+      else if (content.type === "heading") {
+        return SKIP;
+      }
+      // Add separator after paragraphs
+      else if (content.type === "paragraph") {
+        const context = contexts[contexts.length - 1];
+        context.accumulator.push(" ");
+      }
+      // Literal nodes become text
+      else if ("value" in content && content.value) {
+        const context = contexts[contexts.length - 1];
+        context.accumulator.push(content.value);
+      }
+    };
+    walk(content, visitor);
+    return contexts;
+  };
+
+  // Build array of contexts, each context pertaining to a section
+  const contexts = toSectionedText(nodes);
+
+  const headings = [];
+  const corpusParts = [];
+  const index = [];
+
+  // Build array of headings, array of text parts, and array of stops into corpus
+  let contextLength = 0;
+  contexts.forEach((ctx) => {
+    headings.push(ctx.heading?.id);
+
+    ctx.accumulator.forEach((part) => {
+      corpusParts.push(part);
+      contextLength += part.length;
+    });
+    index.push(contextLength);
+  });
 
   // Join text into corpus
-  const corpus = parts.map((item) => item.content).join("");
+  const corpus = corpusParts.join("");
 
-  // Build array of stops indicating end-boundary of each text part
-  const cumSum = (
-    (sum) => (value) =>
-      (sum += value)
-  )(0);
-
-  // Build index containing paths and stops
-  const index = parts.map((item) => {
-    const stop = cumSum(item.content.length);
-    return { path: item.path, stop };
-  });
   // Unique ID
   const digest = createHash("md5")
     .update(documentDigest)
@@ -67,19 +118,91 @@ const plugin = {
         const digest = createHash("md5")
           .update(JSON.stringify(ast))
           .digest("hex");
-        const paragraphs = [];
-        const headings = [];
 
-        // Walk the tree
-        walk(ast, (node, path) => {
-          if (node.type === "paragraph") {
-            paragraphs.push(makeASTDocument(node, path, digest));
-            return SKIP;
-          } else if (node.type === "heading") {
-            headings.push(makeASTDocument(node, path, digest));
-            return SKIP;
-          }
+        // Lift headings
+        const result = structuredClone(ast);
+        sectionTransform(result);
+
+        const toSectionedText = (content) => {
+          const contexts = [];
+          // Build separate corpus entries to preserve structure
+          const pushContext = (heading) => {
+            const index = contexts.length - 1;
+            const headingInfo = heading
+              ? {
+                  text: heading.children[0].value,
+                  id: heading["html-id"] || heading.identifier,
+                  index: index,
+                }
+              : {
+                  index: index,
+                };
+            contexts.push({
+              heading: headingIno,
+              accumulator: [],
+            });
+          };
+          // Create section for root document
+          pushContext(undefined);
+
+          const visitor = (content, path) => {
+            // Keep track of current heading
+            if (content.type === "section") {
+              pushContext(content);
+            }
+            // Don't add headings to corpus
+            else if (content.type === "heading") {
+              return SKIP;
+            }
+            // Add separator after paragraphs
+            else if (content.type === "paragraph") {
+              const context = contexts[contexts.length - 1];
+              context.accumulator.push(" ");
+            }
+            // Literal nodes become text
+            else if ("value" in content && content.value) {
+              const context = contexts[contexts.length - 1];
+              context.accumulator.push(content.value);
+            }
+          };
+          walk(content, visitor);
+          return contexts;
+        };
+
+        // Build array of contexts, each context pertaining to a section
+        const contexts = toSectionedText(nodes);
+
+        const headings = [];
+        const corpusParts = [];
+        const index = [];
+
+        // Build array of headings, array of text parts, and array of stops into corpus
+        let contextLength = 0;
+        contexts.forEach((ctx) => {
+          headings.push(ctx.heading?.id);
+
+          ctx.accumulator.forEach((part) => {
+            corpusParts.push(part);
+            contextLength += part.length;
+          });
+          index.push(contextLength);
         });
+
+        // Join text into corpus
+        const corpus = corpusParts.join("");
+
+        // Unique ID
+        const digest = createHash("md5")
+          .update(documentDigest)
+          .update(corpus)
+          .digest("hex");
+
+        // Build document entry
+        return {
+          index,
+          corpus,
+          digest,
+        };
 
         // Generate hash-content
         const index = {
