@@ -1,10 +1,19 @@
-import { selectAll } from "unist-util-select";
-import { toText } from "./utils.js";
+import {
+  toSectionedParts,
+  type Section,
+  buildCorpus,
+} from "./utils.js";
+import { remove } from "unist-util-remove";
+export type SearchDocument = {
+  sections: Section[];
+  location: string;
+  title: string;
+};
 
-export async function loadDocuments(baseURL: string) {
-  const xrefURL = `${baseURL}/myst.xref.json`
-;
-console.log("Fetchgin", xrefURL)
+const INDEX_NAMES = ["index", "main"];
+export async function loadDocuments(baseURL: string): SearchDocument[] {
+  const xrefURL = `${baseURL}/myst.xref.json`;
+  console.log("Fetching", xrefURL);
   const xrefData = await (await fetch(xrefURL)).json();
   const locations = xrefData.references
     .filter((r: { kind: string }) => r.kind === "page")
@@ -14,13 +23,36 @@ console.log("Fetchgin", xrefURL)
     locations.map(async (path) => {
       const data = await (await fetch(path)).text();
       const doc = JSON.parse(data);
-      const { mdast, location, frontmatter } = doc;
-      const headings = selectAll("heading", mdast)
-        .map((h) => h.children[0].value)
-        .filter((h) => h);
+      const { mdast, slug, frontmatter } = doc;
       const title = frontmatter.title;
-      const body = toText(mdast);
-      return { headings, body, title, location };
+
+      // Remove heading-like nodes
+      remove(mdast, [
+        "code",
+        "inlineCode",
+        "myst",
+        "admonitionTitle",
+        "cardTitle",
+      ]);
+
+      // Group by section
+      const sections = toSectionedParts(mdast);
+      const headings = sections.map(sec => sec.heading);
+      const headingCorpus = buildCorpus(
+        // Build array-of-one-part corpus for headings
+        sections.map((s) => [s.heading?.text ?? '']),
+	{ joinWith: ' ' }
+      );
+      const bodyCorpus = buildCorpus(
+        sections.map(({ parts }) => parts)
+      );
+      return {
+        title,
+        location: `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`,
+        headings,
+        headingCorpus,
+        bodyCorpus,
+      };
     })
   );
 }

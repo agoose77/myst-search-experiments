@@ -1,4 +1,6 @@
 import type { GenericNode, GenericParent } from "myst-common";
+import { toText } from "myst-common";
+import { select } from "unist-util-select";
 export const SKIP = () => {};
 
 type Visit = (content: GenericNode, path: string) => typeof SKIP | void;
@@ -46,24 +48,82 @@ export function walk(
   }
 }
 
-export function toText(content: GenericNode, basePath?: string) {
-  const accumulator: string[] = [];
-  const visit = (content: GenericNode, path: string) => {
-    if (content.type === "heading" || content.type === "code" || content.type === "inlineCode") {
+export type HeadingInfo = {
+  text: string;
+  html_id?: string;
+};
+
+export function toSectionedParts(content: GenericNode) {
+  const accumulator: { heading?: HeadingInfo; parts: [] }[] = [];
+  const newSection = (heading?: Heading) => {
+    const info = heading
+      ? {
+          text: toText(heading),
+          html_id: heading.html_id ?? heading.identifier,
+        }
+      : undefined;
+    accumulator.push({ heading: info, parts: [] });
+  };
+  newSection();
+  const visit = (content: GenericNode) => {
+    if (content.type === "heading") {
+      newSection(content);
       return SKIP;
     }
     if ("value" in content && content.value) {
-      accumulator.push(content.value );
+      accumulator[accumulator.length - 1].parts.push(content.value);
     }
   };
 
-  const depart = (content: GenericNode, path: string) => {
+  const depart = (content: GenericNode) => {
     if (content.type === "paragraph") {
-      accumulator.push("\n" );
+      accumulator[accumulator.length - 1].parts.push("\n");
     }
   };
-  walk(content, visit, depart, basePath);
-  return accumulator.join("");
+  walk(content, visit, depart);
+  return accumulator;
+}
+
+export type Corpus = {
+  text: string;
+  stops: number[];
+};
+
+export function buildCorpus(
+  corpusParts: string[][],
+  options: { joinWith?: string }
+): Corpus {
+  // Build array of headings, array of text parts, and array of stops into corpus
+  let contextLength = 0;
+  const flatParts: string[] = [];
+  const stops: number[] = [];
+  corpusParts.forEach((parts, index) => {
+    // For each part (array of strings), extend the running array of strings and keep
+    // track of stop indices
+    parts.forEach((part) => {
+      flatParts.push(part);
+      contextLength += part.length;
+    });
+    if (
+      // Is this part non-empty?
+      (stops[stops.length - 1] ?? 0) !== contextLength &&
+      // Is there a custom delimeter?
+      options?.joinWith &&
+      // Is this _not_ the final part?
+      index !== corpusParts.length - 1
+    ) {
+      flatParts.push(options.joinWith);
+      contextLength += options.joinWith.length;
+    }
+    stops.push(contextLength);
+  });
+
+  // Join text into corpus
+  const text = flatParts.join("");
+  return {
+    text,
+    stops,
+  };
 }
 
 export function bisectLeft(

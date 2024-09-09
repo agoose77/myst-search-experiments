@@ -11,22 +11,11 @@ import {
   Icon,
 } from "semantic-ui-react";
 import type { StrictSearchProps } from "semantic-ui-react";
-import { loadDocuments } from "../loadDocuments.js";
+import { loadDocuments, type SearchDocument } from "../loadDocuments.js";
 
 import React from "react";
 import MiniSearch from "minisearch";
-import {
-  ItemHeader,
-  ItemContent,
-  Item,
-} from "semantic-ui-react";
-
-type Document = {
-  headings: string[];
-  body: string;
-  location: string;
-  title: string;
-};
+import { ItemHeader, ItemContent, Item } from "semantic-ui-react";
 
 type Result = {
   title: string;
@@ -76,13 +65,18 @@ function exampleReducer(state: State, action: Action) {
   }
 }
 
-type SearchResult = Document & {
+// This regular expression matches any Unicode space, newline, or punctuation
+// character
+const SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/gu;
+
+type SearchResult = SearchDocument & {
   match: Record<string, any[]>;
   terms: string[];
 };
 function buildResults(searchResults: SearchResult[]) {
   const results = [];
   for (const searchResult of searchResults) {
+    // Generic "this document matched"
     results.push({
       kind: "file",
       title: searchResult.title,
@@ -90,6 +84,7 @@ function buildResults(searchResults: SearchResult[]) {
       id: searchResult.location,
     });
 
+    // Invert term-to-field to field-to-term mapping
     const fieldToTerms = new Map();
     for (const term of searchResult.terms) {
       for (const field of searchResult.match[term]) {
@@ -103,43 +98,97 @@ function buildResults(searchResults: SearchResult[]) {
         terms.push(term);
       }
     }
-    const headingTerms = (fieldToTerms.get("headings") ?? []) as string[];
-    searchResult.headings.forEach((heading) => {
-      if (
-        headingTerms.some((term) => {
-          const pattern = new RegExp(`(${term})`, "gi");
-          return heading.match(pattern);
-        })
-      ) {
+
+    // First, handle heading matches (if all terms match heading)
+    const headingTerms = (fieldToTerms.get("headingCorpus.text") ??
+      []) as string[];
+    const bodyTerms = (fieldToTerms.get("bodyCorpus.text") ?? []) as string[];
+    searchResult.headings.forEach((heading, index) => {
+      let headingHasResult = false;
+      if (heading) {
+        if (
+          headingTerms.every((term) => {
+            const pattern = new RegExp(`(${term})`, "gi");
+            return heading.text.match(pattern);
+          }) &&
+          headingTerms.length
+        ) {
+          headingHasResult = true;
+          results.push({
+            kind: "heading",
+            title: heading.text,
+            id: `${searchResult.location}#${index}`,
+            uri: `${searchResult.location}#${heading.html_id}`,
+          });
+        }
+      }
+      if (bodyTerms.length) {
+        if (!headingHasResult && heading) {
+          results.push({
+            kind: "heading",
+            title: heading.text,
+            id: `${searchResult.location}#${index}`,
+            uri: `${searchResult.location}#${heading.html_id}`,
+          });
+        }
+        const stop = searchResult.bodyCorpus.stops[index];
+        const start = searchResult.bodyCorpus.stops[index - 1] ?? 0;
+        const sectionText = searchResult.bodyCorpus.text.slice(start, stop);
+
+        const termsPattern = new RegExp(bodyTerms.join("|"), "ig"); // TODO escape?
+        // Split section into tokens, match each token for a term, and highlight term
+        const tokens = [];
+        let lastStop = 0;
+        for (const m of sectionText.matchAll(SPACE_OR_PUNCTUATION)) {
+          const token = sectionText.slice(lastStop, m.index);
+          tokens.push([token, token.match(termsPattern), lastStop, m.index]);
+          lastStop = m.index + m[0].length;
+        }
+	tokens.push([sectionText.slice(lastStop, sectionText.length), lastStop, sectionText.length])
+
+        //.map((m) => [m, m[0]]);//, "<strong>$&</strong>"
+
+        // Find local window with greatest number of matches
+        let titleText: string;
+        const windowSize = 32;
+        if (tokens.length > windowSize) {
+          const windowStop = tokens.length - windowSize;
+          let bestGOF = -1;
+          let bestWindow = [0, windowSize];
+          for (let i = 0; i < windowStop; i++) {
+            const j = i + windowSize;
+            const gof = tokens
+              .slice(i, j)
+              .map(([_, termMatch]) => {
+                return !!termMatch;
+              })
+              .reduce((a, b) => a + b);
+            if (gof > bestGOF) {
+              bestGOF = gof;
+              bestWindow = [i, j];
+            }
+          }
+          const start = tokens[bestWindow[0]][2];
+          const stop = tokens[bestWindow[1]][3];
+          titleText = sectionText.slice(start, stop);
+        } else {
+          titleText = sectionText;
+        }
+        const htmlID = heading?.html_id ?? "";
         results.push({
-          kind: "heading",
-          title: heading,
-          id: `${searchResult.location}#${heading}`,
+          kind: "text",
+          title: titleText.replaceAll(termsPattern, "<strong>$&</strong>"),
+          id: `${searchResult.location}%${index}`,
+          uri: `${searchResult.location}#${htmlID}`,
         });
       }
-    });
-
-    const bodyTerms = (fieldToTerms.get("body") ?? []) as string[];
-    bodyTerms.forEach((term) => {
-      const pattern = new RegExp(`(${term})`, "i");
-      const match = searchResult.body.match(pattern)!;
-      const title = searchResult.body.slice(
-        match.index - 16,
-        match.index + match[0].length + 128
-      );
-
-      results.push({
-        kind: "text",
-        title: `... ${title} ...`,
-        id: `${searchResult.location}%${term}`,
-      });
     });
   }
   console.log(results);
   return results;
 }
 
-function SearchExampleStandard({ source }: { source: Document[] }) {
+function SearchExampleStandard({ source }: { source: SearchDocument[] }) {
   const [state, dispatch] = React.useReducer(exampleReducer, initialState);
   const { loading, results, value } = state;
 
@@ -147,14 +196,26 @@ function SearchExampleStandard({ source }: { source: Document[] }) {
   const [search, setSearch] = React.useState<MiniSearch | undefined>();
   React.useEffect(() => {
     const search = new MiniSearch({
-      fields: ["headings", "body", "title"],
-      storeFields: ["headings", "body", "location", "title"],
+      fields: ["headingCorpus.text", "bodyCorpus.text", "title"],
+      storeFields: [
+        "headingCorpus",
+        "bodyCorpus",
+        "location",
+        "title",
+        "headings",
+      ],
       idField: "location",
       searchOptions: {
         boost: { title: 2, headings: 2 },
         fuzzy: 0.2,
         prefix: true,
         combineWith: "and",
+      },
+      extractField: (document, fieldName) => {
+        // Access nested fields
+        return fieldName
+          .split(".")
+          .reduce((doc, key) => doc && doc[key], document);
       },
     });
     search.addAll(source);
@@ -202,7 +263,7 @@ function SearchExampleStandard({ source }: { source: Document[] }) {
         <ItemContent>
           <ItemHeader>
             <Icon name={icon} />
-            {title}
+            <a dangerouslySetInnerHTML={{ __html: title }} href={uri} />
           </ItemHeader>
         </ItemContent>
       </Item>
