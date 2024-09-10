@@ -134,31 +134,37 @@ function extractField(document, fieldName: string) {
 }
 
 function matchedWords(result: SearchResult) {
-  let n = 0;
-  result.terms.forEach((term) => {
-    // TODO check the tokenizer behaviour here
-    const pattern = new RegExp(`\\b${term}\\b`, "gi");
-    result.match[term].forEach((field) => {
-      const value = extractField(result, field);
-      const matches = Array.from(value.matchAll(pattern));
-      n += matches.length;
-    });
-  });
-  return n;
+  const allMatches = result.terms
+    .map((term) => {
+      // TODO check the tokenizer behaviour here
+      const pattern = new RegExp(`\\b${term}\\b`, "gi");
+      return result.match[term]
+        .map((field) => {
+          const value = extractField(result, field);
+          return Array.from(value.matchAll(pattern)).map((m) => m[0]);
+        })
+        .flat();
+    })
+    .flat();
+  const uniqueMatches = new Set(allMatches);
+  return uniqueMatches.size;
 }
 function matchedExactWords(result: SearchResult) {
-  let n = 0;
   const attributes = matchedAttributes(result);
-  result.queryTerms.forEach((term) => {
-    // TODO check the tokenizer behaviour here
-    const pattern = new RegExp(`\\b${term}\\b`, "gi");
-    attributes.forEach((field) => {
-      const value = extractField(result, field);
-      const matches = Array.from(value.matchAll(pattern));
-      n += matches.length;
-    });
-  });
-  return n;
+  const allMatches = result.queryTerms
+    .map((term) => {
+      // TODO check the tokenizer behaviour here
+      const pattern = new RegExp(`\\b${term}\\b`, "gi");
+      return attributes
+        .map((field) => {
+          const value = extractField(result, field);
+          return Array.from(value.matchAll(pattern)).map((m) => m[0]);
+        })
+        .flat();
+    })
+    .flat();
+  const uniqueMatches = new Set(allMatches);
+  return uniqueMatches.size;
 }
 
 type ExtendedSearchResult = SearchResult & {
@@ -214,18 +220,22 @@ function cmpRanking(left: ExtendedSearchResult, right: ExtendedSearchResult) {
   return 0;
 }
 
+function resultIsAND(queryTokens: string[]): (result: SearchResult) => boolean {
+  return (result) => result.queryTerms.length === queryTokens.length;
+}
+
 type SearchResult = SearchRecord & {
   match: Record<string, string[]>;
   terms: string[];
 };
 function performSearch(search: MiniSearch, query: string) {
   const tokeniser = MiniSearch.getDefault("tokenize");
-  const queryTokens = tokeniser(query);
+  const filterAND = resultIsAND(tokeniser(query));
 
   const searchResults = search
     .search(query)
     // Only take results that matched all tokens (AND) _somewhere_ in the document fields
-    .filter((result) => result.queryTerms.length === queryTokens.length)
+    .filter(filterAND)
     .map(extendSearchRanking)
     .sort(cmpRanking);
 
@@ -268,7 +278,7 @@ function SearchExampleStandard({ source }: { source: SearchDocument[] }) {
     // Will this favour sections with more children? probably
     const search = new MiniSearch({
       fields: SEARCH_ATTRIBUTES_ORDERED,
-      storeFields: ["hierarchy", "content", "url", "type", "id"],
+      storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
       idField: "id",
       searchOptions: {
         fuzzy: 0.2,

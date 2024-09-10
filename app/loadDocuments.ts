@@ -41,9 +41,7 @@ export type SearchRecord = {
   hierarchy: Heirarchy;
   url: string;
 
-  weight: number;
   position: number;
-
   id: string;
 };
 
@@ -100,10 +98,11 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
       // Remove heading-like nodes
       remove(mdast, [
         "code",
-        "inlineCode",
+        //"inlineCode",
         "myst",
         "admonitionTitle",
         "cardTitle",
+	(node) => node.type === "tableCell" && node?.header
       ]);
 
       // Group by section (simple running accumulator)
