@@ -149,6 +149,7 @@ function matchedWords(result: SearchResult) {
   const uniqueMatches = new Set(allMatches);
   return uniqueMatches.size;
 }
+
 function matchedExactWords(result: SearchResult) {
   const attributes = matchedAttributes(result);
   const allMatches = result.queryTerms
@@ -158,11 +159,11 @@ function matchedExactWords(result: SearchResult) {
       return attributes
         .map((field) => {
           const value = extractField(result, field);
-          return Array.from(value.matchAll(pattern)).map((m) => m[0]);
+          return Array.from(value.matchAll(pattern)).map((m) => m ? term : undefined);
         })
         .flat();
     })
-    .flat();
+    .flat().filter(item => item);
   const uniqueMatches = new Set(allMatches);
   return uniqueMatches.size;
 }
