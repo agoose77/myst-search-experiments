@@ -50,6 +50,7 @@ export function walk(
 
 export type HeadingInfo = {
   text: string;
+  depth: number;
   html_id?: string;
 };
 
@@ -59,6 +60,7 @@ export function toSectionedParts(content: GenericNode) {
     const info = heading
       ? {
           text: toText(heading),
+          depth: heading.depth,
           html_id: heading.html_id ?? heading.identifier,
         }
       : undefined;

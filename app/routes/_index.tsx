@@ -11,7 +11,7 @@ import {
   Icon,
 } from "semantic-ui-react";
 import type { StrictSearchProps } from "semantic-ui-react";
-import { loadDocuments, type SearchDocument } from "../loadDocuments.js";
+import { loadDocuments, type SearchRecord } from "../loadDocuments.js";
 
 import React from "react";
 import MiniSearch from "minisearch";
@@ -73,118 +73,28 @@ type SearchResult = SearchDocument & {
   match: Record<string, any[]>;
   terms: string[];
 };
-function buildResults(searchResults: SearchResult[]) {
+function performSearch(search: MiniSearch, query: string) {
+  const searchResults = search.search(query);
+
   const results = [];
   for (const searchResult of searchResults) {
+    const { hierarchy, content, type } = searchResult;
     // Generic "this document matched"
     results.push({
-      kind: "file",
-      title: searchResult.title,
-      uri: searchResult.location,
-      id: searchResult.location,
-    });
-
-    // Invert term-to-field to field-to-term mapping
-    const fieldToTerms = new Map();
-    for (const term of searchResult.terms) {
-      for (const field of searchResult.match[term]) {
-        let terms: string[];
-        if (fieldToTerms.has(field)) {
-          terms = fieldToTerms.get(field);
-        } else {
-          terms = [];
-          fieldToTerms.set(field, terms);
-        }
-        terms.push(term);
-      }
-    }
-
-    // First, handle heading matches (if all terms match heading)
-    const headingTerms = (fieldToTerms.get("headingCorpus.text") ??
-      []) as string[];
-    const bodyTerms = (fieldToTerms.get("bodyCorpus.text") ?? []) as string[];
-    searchResult.headings.forEach((heading, index) => {
-      let headingHasResult = false;
-      if (heading) {
-        if (
-          headingTerms.every((term) => {
-            const pattern = new RegExp(`(${term})`, "gi");
-            return heading.text.match(pattern);
-          }) &&
-          headingTerms.length
-        ) {
-          headingHasResult = true;
-          results.push({
-            kind: "heading",
-            title: heading.text,
-            id: `${searchResult.location}#${index}`,
-            uri: `${searchResult.location}#${heading.html_id}`,
-          });
-        }
-      }
-      if (bodyTerms.length) {
-        if (!headingHasResult && heading) {
-          results.push({
-            kind: "heading",
-            title: heading.text,
-            id: `${searchResult.location}#${index}`,
-            uri: `${searchResult.location}#${heading.html_id}`,
-          });
-        }
-        const stop = searchResult.bodyCorpus.stops[index];
-        const start = searchResult.bodyCorpus.stops[index - 1] ?? 0;
-        const sectionText = searchResult.bodyCorpus.text.slice(start, stop);
-
-        const termsPattern = new RegExp(bodyTerms.join("|"), "ig"); // TODO escape?
-        // Split section into tokens, match each token for a term, and highlight term
-        const tokens = [];
-        let lastStop = 0;
-        for (const m of sectionText.matchAll(SPACE_OR_PUNCTUATION)) {
-          const token = sectionText.slice(lastStop, m.index);
-          tokens.push([token, token.match(termsPattern), lastStop, m.index]);
-          lastStop = m.index + m[0].length;
-        }
-	tokens.push([sectionText.slice(lastStop, sectionText.length), lastStop, sectionText.length])
-
-        //.map((m) => [m, m[0]]);//, "<strong>$&</strong>"
-
-        // Find local window with greatest number of matches
-        let titleText: string;
-        const windowSize = 32;
-        if (tokens.length > windowSize) {
-          const windowStop = tokens.length - windowSize;
-          let bestGOF = -1;
-          let bestWindow = [0, windowSize];
-          for (let i = 0; i < windowStop; i++) {
-            const j = i + windowSize;
-            const gof = tokens
-              .slice(i, j)
-              .map(([_, termMatch]) => {
-                return !!termMatch;
-              })
-              .reduce((a, b) => a + b);
-            if (gof > bestGOF) {
-              bestGOF = gof;
-              bestWindow = [i, j];
-            }
-          }
-          const start = tokens[bestWindow[0]][2];
-          const stop = tokens[bestWindow[1]][3];
-          titleText = sectionText.slice(start, stop);
-        } else {
-          titleText = sectionText;
-        }
-        const htmlID = heading?.html_id ?? "";
-        results.push({
-          kind: "text",
-          title: titleText.replaceAll(termsPattern, "<strong>$&</strong>"),
-          id: `${searchResult.location}%${index}`,
-          uri: `${searchResult.location}#${htmlID}`,
-        });
-      }
+      kind: type === "content" ? "text" : type === "lvl1" ? "file" : "heading",
+      title:
+        (content.length ? content.slice(0, 128) : undefined) ??
+        hierarchy.lvl6 ??
+        hierarchy.lvl5 ??
+        hierarchy.lvl4 ??
+        hierarchy.lvl3 ??
+        hierarchy.lvl2 ??
+        hierarchy.lvl1 ??
+        "<NOT DEFINED>",
+      uri: searchResult.url,
+      id: searchResult.id,
     });
   }
-  console.log(results);
   return results;
 }
 
@@ -195,21 +105,26 @@ function SearchExampleStandard({ source }: { source: SearchDocument[] }) {
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>();
   const [search, setSearch] = React.useState<MiniSearch | undefined>();
   React.useEffect(() => {
+    console.log({ source });
+    // Maybe need to destructure into sections and track lvl 1-4
+    // Add empty content if no children exist
+    // Will this favour sections with more children? probably
     const search = new MiniSearch({
-      fields: ["headingCorpus.text", "bodyCorpus.text", "title"],
-      storeFields: [
-        "headingCorpus",
-        "bodyCorpus",
-        "location",
-        "title",
-        "headings",
+      fields: [
+        "hierarchy.lvl1",
+        "hierarchy.lvl2",
+        "hierarchy.lvl3",
+        "hierarchy.lvl4",
+        "hierarchy.lvl5",
+        "hierarchy.lvl6",
+        "content",
       ],
-      idField: "location",
+      storeFields: ["hierarchy", "content", "url", "type", "id"],
+      idField: "id",
       searchOptions: {
-        boost: { title: 2, headings: 2 },
         fuzzy: 0.2,
         prefix: true,
-        combineWith: "and",
+        combineWith: "or",
       },
       extractField: (document, fieldName) => {
         // Access nested fields
@@ -237,10 +152,9 @@ function SearchExampleStandard({ source }: { source: SearchDocument[] }) {
           dispatch({ type: "CLEAN_QUERY" });
           return;
         }
-        console.log("SEARCH", search!.search(data.value!));
         dispatch({
           type: "FINISH_SEARCH",
-          results: buildResults(search!.search(data.value!)),
+          results: performSearch(search!, data.value!),
         });
       }, 300);
     },

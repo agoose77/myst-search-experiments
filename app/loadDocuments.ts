@@ -1,13 +1,11 @@
-import { toSectionedParts, type Section, buildCorpus } from "./utils.js";
+import { toSectionedParts, type Section } from "./utils.js";
 import { remove } from "unist-util-remove";
-export type SearchDocument = {
-  sections: Section[];
-  location: string;
-  title: string;
-};
 
-const INDEX_NAMES = ["index", "main"];
-
+/**
+ * Load MyST site page data from a website deployed with myst.xref.json
+ *
+ * @param baseURL - base URL of the MyST site.
+ */
 async function loadPagesFromXref(baseURL: string) {
   const xrefURL = `${baseURL}/myst.xref.json`;
   console.log("Fetching", xrefURL);
@@ -26,36 +24,114 @@ async function loadPagesFromXref(baseURL: string) {
   );
 }
 
-export async function loadDocuments(baseURL: string): SearchDocument[] {
+export type RecordHierarchy = {
+  lvl1: string;
+  lvl2?: string;
+  lvl3?: string;
+  lvl4?: string;
+  lvl5?: string;
+  lvl6?: string;
+};
+
+type HeadingLevel = "lvl1" | "lvl2" | "lvl3" | "lvl4" | "lvl5" | "lvl6";
+
+export type SearchRecord = {
+  type: "content" | HeadingLevel;
+  content: string;
+  hierarchy: Heirarchy;
+  url: string;
+
+  weight: number;
+  position: number;
+
+  id: string;
+};
+
+const INDEX_NAMES = ["index", "main"];
+
+function sectionToHeadingLevel(section: Section): HeadingLevel {
+  if (!section.heading) {
+    return "lvl1";
+  }
+  switch (section.heading.depth) {
+    case 2:
+      return "lvl2";
+    case 3:
+      return "lvl2";
+    case 4:
+      return "lvl4";
+    case 5:
+      return "lvl5";
+    case 6:
+      return "lvl6";
+    default:
+      throw new Error(`unknown heading depth: ${section.heading.depth}`);
+  }
+}
+
+function buildHierarchy(
+  title: string,
+  sections: Section,
+  index: number
+): RecordHierarchy {
+  const result: RecordHierarchy = { lvl1: title };
+  // The first section is always the title section
+  for (let i = index; i > 1; i--) {
+    const section = sections[index];
+    const lvl = sectionToHeadingLevel(section);
+    result[lvl] = section.heading.text!;
+  }
+  return result;
+}
+
+export async function loadDocuments(baseURL: string): SearchRecord[] {
   const pages = await loadPagesFromXref(baseURL);
-  return pages.map((doc) => {
-    const { mdast, slug, frontmatter } = doc;
-    const title = frontmatter.title;
+  return pages
+    .map((doc) => {
+      const { mdast, slug, frontmatter } = doc;
+      const title = frontmatter.title;
 
-    // Remove heading-like nodes
-    remove(mdast, [
-      "code",
-      "inlineCode",
-      "myst",
-      "admonitionTitle",
-      "cardTitle",
-    ]);
+      // Remove heading-like nodes
+      remove(mdast, [
+        "code",
+        "inlineCode",
+        "myst",
+        "admonitionTitle",
+        "cardTitle",
+      ]);
 
-    // Group by section
-    const sections = toSectionedParts(mdast);
-    const headings = sections.map((sec) => sec.heading);
-    const headingCorpus = buildCorpus(
-      // Build array-of-one-part corpus for headings
-      sections.map((s) => [s.heading?.text ?? ""]),
-      { joinWith: " " }
-    );
-    const bodyCorpus = buildCorpus(sections.map(({ parts }) => parts));
-    return {
-      title,
-      location: `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`,
-      headings,
-      headingCorpus,
-      bodyCorpus,
-    };
-  });
+      // Group by section
+      const sections = toSectionedParts(mdast);
+      const pageURL = `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`;
+      return sections
+        .map((section, index) => {
+          const hierarchy = buildHierarchy(title, sections, index);
+          const lvl = sectionToHeadingLevel(section);
+          const recordURL = section.heading
+            ? section.heading.html_id
+              ? `${pageURL}#${section.heading.html_id}`
+              : `${pageURL}`
+            : pageURL;
+          return [
+            {
+              hierarchy,
+              content: "",
+              type: lvl,
+              url: recordURL,
+              position: 2 * index,
+              id: `${pageURL}#${2 * index}`,
+            },
+            {
+              hierarchy,
+              content: section.parts.join(""),
+              type: "content",
+              url: recordURL,
+              position: 2 * index + 1,
+              id: `${pageURL}#${2 * index + 1}`,
+            },
+          ];
+        })
+        .flat();
+    })
+    .flat();
 }
