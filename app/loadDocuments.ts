@@ -109,7 +109,7 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
       // Group by section (simple running accumulator)
       const sections = toSectionedParts(mdast);
       const pageURL = `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`;
-      if (title.includes("Math")) {
+      if (title?.includes("Math")) {
         console.log(sections.map((sec) => sec.heading));
       }
 
