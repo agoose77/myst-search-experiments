@@ -116,9 +116,6 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
       // Build sections into search records
       return sections
         .map((section, index) => {
-		if (section.heading?.html_id === "ams-environments") {
-console.log(sections, index)
-		}
           const hierarchy = buildHierarchy(title, sections, index);
           const lvl = sectionToHeadingLevel(section.heading);
           const recordURL = section.heading

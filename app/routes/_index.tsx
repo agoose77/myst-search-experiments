@@ -9,7 +9,9 @@ import {
   Header,
   Segment,
   Icon,
-ItemHeader, ItemContent, Item 
+  ItemHeader,
+  ItemContent,
+  Item,
 } from "semantic-ui-react";
 import type { StrictSearchProps } from "semantic-ui-react";
 import { loadDocuments, type SearchRecord } from "../loadDocuments.js";
@@ -155,11 +157,14 @@ function matchedExactWords(result: SearchResult) {
       return attributes
         .map((field) => {
           const value = extractField(result, field);
-          return Array.from(value.matchAll(pattern)).map((m) => m ? term : undefined);
+          return Array.from(value.matchAll(pattern)).map((m) =>
+            m ? term : undefined
+          );
         })
         .flat();
     })
-    .flat().filter(item => item);
+    .flat()
+    .filter((item) => item);
   const uniqueMatches = new Set(allMatches);
   return uniqueMatches.size;
 }
@@ -221,6 +226,33 @@ function resultIsAND(queryTokens: string[]): (result: SearchResult) => boolean {
   return (result) => result.queryTerms.length === queryTokens.length;
 }
 
+const SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/gu;
+function highlightTitle(text: string, result: ExtendedSearchResult) {
+  const allTerms = result.terms.join("|");
+  const pattern = new RegExp(`\\b(${allTerms})\\b`, "gi");
+  const allMatches = Array.from(text.matchAll(pattern)).map((m) => m);
+
+  const { index: start } = allMatches[0] ?? { index: 0 };
+
+  const tokens = Array.from(text.slice(start).matchAll(SPACE_OR_PUNCTUATION));
+  tokens.push({ index: text.length - start });
+
+  const limitedTokens = tokens.slice(0, 16);
+  const { index: offset } = limitedTokens[limitedTokens.length - 1];
+
+  let title = text
+    .slice(start, start + offset)
+    .replace(pattern, "<strong>$&</strong>");
+  if (start !== 0) {
+    title = `... ${title}`;
+  }
+  if (offset !== text.length) {
+    title = `${title} ...`;
+  }
+
+  return title;
+}
+
 type SearchResult = SearchRecord & {
   match: Record<string, string[]>;
   terms: string[];
@@ -236,10 +268,6 @@ function performSearch(search: MiniSearch, query: string) {
     .map(extendSearchRanking)
     .sort(cmpRanking);
 
-  //.sort(cmpByPosition)
-  //.sort(cmpByWeight)
-  //.sort(cmpByAttribute)
-  //.sort(cmpByMatches);
   console.log(searchResults);
 
   return searchResults.map((result) => {
@@ -247,15 +275,10 @@ function performSearch(search: MiniSearch, query: string) {
     // Generic "this document matched"
     return {
       kind: type === "content" ? "text" : type === "lvl1" ? "file" : "heading",
-      title:
-        (content.length ? content.slice(0, 128) : undefined) ??
-        hierarchy.lvl6 ??
-        hierarchy.lvl5 ??
-        hierarchy.lvl4 ??
-        hierarchy.lvl3 ??
-        hierarchy.lvl2 ??
-        hierarchy.lvl1 ??
-        "<NOT DEFINED>",
+      title: highlightTitle(
+        type === "content" ? content : hierarchy[type],
+        result
+      ),
       uri: url,
       id,
     };
