@@ -74,10 +74,11 @@ function buildHierarchy(
 ): RecordHierarchy {
   const result: RecordHierarchy = { lvl1: title };
   let currentDepth = 100;
+
   // The first section is always the title section
   for (let i = index; i > 0; i--) {
     const { heading } = sections[i];
-    if (heading.depth === currentDepth) {
+    if (heading.depth >= currentDepth) {
       continue;
     }
     const lvl = sectionToHeadingLevel(heading);
@@ -115,6 +116,9 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
       // Build sections into search records
       return sections
         .map((section, index) => {
+		if (section.heading?.html_id === "ams-environments") {
+console.log(sections, index)
+		}
           const hierarchy = buildHierarchy(title, sections, index);
           const lvl = sectionToHeadingLevel(section.heading);
           const recordURL = section.heading
