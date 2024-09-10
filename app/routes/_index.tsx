@@ -182,7 +182,7 @@ function extendSearchRanking(result: SearchResult): ExtendedSearchResult {
   return {
     ...result,
     ranking: {
-      words: matchedWords(result),
+      words: 0, // matchedWords(result), NOT USED for AND
       attribute: matchedAttribute(result),
       proximity: 8, // TODO
       exact: matchedExactWords(result),
@@ -281,7 +281,7 @@ function SearchExampleStandard({ source }: { source: SearchDocument[] }) {
       storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
       idField: "id",
       searchOptions: {
-        fuzzy: 0.2,
+        fuzzy: 0.15,
         prefix: true,
         combineWith: "or",
       },
