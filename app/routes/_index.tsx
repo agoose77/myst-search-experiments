@@ -1,7 +1,7 @@
 import type { MetaFunction, LinksFunction } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import type { LoaderFunctionArgs } from "@remix-run/node";
-//import type { ClientLoaderFunctionArgs } from "@remix-run/react";
+//import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { ClientLoaderFunctionArgs } from "@remix-run/react";
 import {
   GridColumn,
   Search,
@@ -9,13 +9,13 @@ import {
   Header,
   Segment,
   Icon,
+ItemHeader, ItemContent, Item 
 } from "semantic-ui-react";
 import type { StrictSearchProps } from "semantic-ui-react";
 import { loadDocuments, type SearchRecord } from "../loadDocuments.js";
 
 import React from "react";
 import MiniSearch from "minisearch";
-import { ItemHeader, ItemContent, Item } from "semantic-ui-react";
 
 type Result = {
   title: string;
@@ -64,10 +64,6 @@ function exampleReducer(state: State, action: Action) {
       throw new Error();
   }
 }
-
-// This regular expression matches any Unicode space, newline, or punctuation
-// character
-const SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/gu;
 
 const SEARCH_ATTRIBUTES_ORDERED = [
   "hierarchy.lvl1",
@@ -371,16 +367,7 @@ function SearchExampleStandard({ source }: { source: SearchDocument[] }) {
   );
 }
 
-/*
-  export const clientLoader = async ({ request }: ClientLoaderFunctionArgs) => {
-  const url = new URL(request.url);
-  const baseURL = url.searchParams.get("url");
-  console.log("LOADER", baseURL);
-  return { documents: baseURL ? await loadDocuments(baseURL) : [] };
-};
-*/
-
-export const loader = async ({ request }: LoaderFunctionArgs) => {
+export const clientLoader = async ({ request }: ClientLoaderFunctionArgs) => {
   const url = new URL(request.url);
   const baseURL = url.searchParams.get("url");
   return { documents: baseURL ? await loadDocuments(baseURL) : [] };
