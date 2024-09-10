@@ -2,11 +2,13 @@ import { vitePlugin as remix } from "@remix-run/dev";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
+const base = process.env.BASE_URL ?? "/";
 export default defineConfig({
-  base: process.env.BASE_URL ?? "/",
+  base,
   plugins: [
     remix({
       ssr: false,
+      basename: base,
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
