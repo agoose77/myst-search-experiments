@@ -49,15 +49,15 @@ export type SearchRecord = {
 
 const INDEX_NAMES = ["index", "main"];
 
-function sectionToHeadingLevel(section: Section): HeadingLevel {
-  if (!section.heading) {
+function sectionToHeadingLevel(heading: HeadingInfo | undefined): HeadingLevel {
+  if (!heading) {
     return "lvl1";
   }
-  switch (section.heading.depth) {
+  switch (heading.depth) {
     case 2:
       return "lvl2";
     case 3:
-      return "lvl2";
+      return "lvl3";
     case 4:
       return "lvl4";
     case 5:
@@ -65,7 +65,7 @@ function sectionToHeadingLevel(section: Section): HeadingLevel {
     case 6:
       return "lvl6";
     default:
-      throw new Error(`unknown heading depth: ${section.heading.depth}`);
+      throw new Error(`unknown heading depth: ${heading.depth}`);
   }
 }
 
@@ -75,11 +75,17 @@ function buildHierarchy(
   index: number
 ): RecordHierarchy {
   const result: RecordHierarchy = { lvl1: title };
+  let currentDepth = 100;
   // The first section is always the title section
-  for (let i = index; i > 1; i--) {
-    const section = sections[index];
-    const lvl = sectionToHeadingLevel(section);
-    result[lvl] = section.heading.text!;
+  for (let i = index; i > 0; i--) {
+    const { heading } = sections[i];
+    if (heading.depth === currentDepth) {
+      continue;
+    }
+    const lvl = sectionToHeadingLevel(heading);
+
+    result[lvl] = heading.text!;
+    currentDepth = heading.depth;
   }
   return result;
 }
@@ -100,18 +106,24 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
         "cardTitle",
       ]);
 
-      // Group by section
+      // Group by section (simple running accumulator)
       const sections = toSectionedParts(mdast);
       const pageURL = `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`;
+      if (title.includes("Math")) {
+        console.log(sections.map((sec) => sec.heading));
+      }
+
+      // Build sections into search records
       return sections
         .map((section, index) => {
           const hierarchy = buildHierarchy(title, sections, index);
-          const lvl = sectionToHeadingLevel(section);
+          const lvl = sectionToHeadingLevel(section.heading);
           const recordURL = section.heading
             ? section.heading.html_id
               ? `${pageURL}#${section.heading.html_id}`
               : `${pageURL}`
             : pageURL;
+          const recordOffset = index * 2;
           return [
             {
               hierarchy,
@@ -119,7 +131,7 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
               type: lvl,
               url: recordURL,
               position: 2 * index,
-              id: `${pageURL}#${2 * index}`,
+              id: `${pageURL}#${recordOffset}`,
             },
             {
               hierarchy,
@@ -127,7 +139,7 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
               type: "content",
               url: recordURL,
               position: 2 * index + 1,
-              id: `${pageURL}#${2 * index + 1}`,
+              id: `${pageURL}#${recordOffset + 1}`,
             },
           ];
         })
