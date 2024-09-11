@@ -1,5 +1,5 @@
-import { type SearchResult } from "./search.js";
-
+import type { Query, SearchResult } from "./search.js";
+import { extractField, SPACE_OR_PUNCTUATION } from "./search.js";
 
 export const SEARCH_ATTRIBUTES_ORDERED = [
   "hierarchy.lvl1",
@@ -49,7 +49,7 @@ function cmp(left: number, right: number): number {
 
 function matchedAttributes(result: SearchResult): string[] {
   return Array.from(
-    new Set(result.queries.flatMap((query) => Object.values(query.matches)))
+    new Set(result.queries.flatMap((query) => Object.values(query.matches).flat()))
   );
 }
 
@@ -58,11 +58,6 @@ function matchedAttribute(result: SearchResult): number {
   return SEARCH_ATTRIBUTES_ORDERED.find((attribute) =>
     matched.includes(attribute)
   );
-}
-
-export function extractField(document, fieldName: string) {
-  // Access nested fields
-  return fieldName.split(".").reduce((doc, key) => doc && doc[key], document);
 }
 
 function matchedWords(result: SearchResult) {
