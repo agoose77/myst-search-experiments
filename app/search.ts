@@ -2,12 +2,6 @@ import MiniSearch, {
   type Options,
   type SearchResult as RawSearchResult,
 } from "minisearch";
-
-export const SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/gu;
-export function extractField(document: any, fieldName: string) {
-  // Access nested fields
-  return fieldName.split(".").reduce((doc, key) => doc && doc[key], document);
-}
 export const SEARCH_ATTRIBUTES_ORDERED = [
   "hierarchy.lvl1",
   "hierarchy.lvl2",
@@ -15,8 +9,18 @@ export const SEARCH_ATTRIBUTES_ORDERED = [
   "hierarchy.lvl4",
   "hierarchy.lvl5",
   "hierarchy.lvl6",
-  "content",
+  "$content",
 ] as const;
+
+export const SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/gu;
+export function extractField(document: any, fieldName: string) {
+  // $ indicates ordered
+  if (fieldName.startsWith("$")) {
+    fieldName = fieldName.slice(1);
+  }
+  // Access nested fields
+  return fieldName.split(".").reduce((doc, key) => doc && doc[key], document);
+}
 
 export function extendDefaultOptions(options: Options): Options {
   const defaultOptions = {

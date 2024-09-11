@@ -1,15 +1,9 @@
 import type { Query, SearchResult } from "./search.js";
-import { extractField, SPACE_OR_PUNCTUATION } from "./search.js";
-
-export const SEARCH_ATTRIBUTES_ORDERED = [
-  "hierarchy.lvl1",
-  "hierarchy.lvl2",
-  "hierarchy.lvl3",
-  "hierarchy.lvl4",
-  "hierarchy.lvl5",
-  "hierarchy.lvl6",
-  "content",
-] as const;
+import {
+  extractField,
+  SPACE_OR_PUNCTUATION,
+  SEARCH_ATTRIBUTES_ORDERED,
+} from "./search.js";
 
 const TYPE_WEIGHTS = new Map([
   ["lvl1", 90],
@@ -71,15 +65,15 @@ function queryPairProximity(
                 leftMatch.index < rightMatch.index
                   ? [leftMatch.index, rightMatch.index]
                   : [rightMatch.index, leftMatch.index];
-              const separators = Array.from(
+              const numSeparators = Array.from(
                 content.slice(start, stop).matchAll(SPACE_OR_PUNCTUATION)
               ).length;
               // Fast-path, can never beat 1!
-              if (separators === 1) {
+              if (numSeparators === 1) {
                 return 1;
               }
-              if (separators < bestProximity) {
-                bestProximity = separators;
+              if (numSeparators < bestProximity) {
+                bestProximity = numSeparators;
               }
             }
           }
@@ -103,30 +97,47 @@ function wordsProximity(result: SearchResult, bound: number) {
 }
 function matchedAttributes(result: SearchResult): string[] {
   return Array.from(
-    new Set(result.queries.flatMap((query) => Object.values(query.matches).flat()))
+    new Set(
+      result.queries.flatMap((query) => Object.values(query.matches).flat())
+    )
   );
 }
 
-function matchedAttribute(result: SearchResult): number {
-  const matched = matchedAttributes(result);
-  return SEARCH_ATTRIBUTES_ORDERED.find((attribute) =>
-    matched.includes(attribute)
+function matchedAttributePosition(result: SearchResult): number {
+  // Build mapping from fields to terms matching that field
+  const fieldToTerms = new Map();
+  result.queries.forEach((query) =>
+    Object.entries(query.matches).forEach(([term, fields]) =>
+      fields.forEach((field) => {
+        let terms = fieldToTerms.get(field);
+        if (!terms) {
+          terms = [];
+          fieldToTerms.set(field, terms);
+        }
+        terms.push(term);
+      })
+    )
   );
-}
 
-function matchedWords(result: SearchResult) {
-  const allMatches = result.queries.flatMap((query) =>
-    Object.entries(query.matches).flatMap(([match, fields]) => {
-      // TODO check the tokenizer behaviour here
-      const pattern = new RegExp(`\\b${match}\\b`, "gi");
-      return fields.flatMap((field) => {
-        const value = extractField(result, field);
-        return Array.from(value.matchAll(pattern)).map((m) => m[0]);
-      });
-    })
+  // Find first field that we matched
+  const attribute = SEARCH_ATTRIBUTES_ORDERED.find((field) =>
+    fieldToTerms.has(field)
   );
-  const uniqueMatches = new Set(allMatches);
-  return uniqueMatches.size;
+
+  // If this field is positional, find the start of the text match
+  let position;
+  if (attribute.startsWith("$")) {
+    const attributeTerms = fieldToTerms.get(attribute)!;
+    const value = extractField(result, attribute);
+    const matchPositions = attributeTerms
+      .flatMap((term) => Array.from(value.matchAll(new RegExp(`\\b${term}\\b`, "gi"))))
+      .map((match) => match.index);
+    position = Math.min(...matchPositions);
+  } else {
+    position = undefined;
+  }
+
+  return { attribute, position };
 }
 
 function matchedExactWords(result: SearchResult) {
@@ -159,7 +170,7 @@ function matchedExactWords(result: SearchResult) {
 
 export type ExtendedSearchResult = SearchResult & {
   ranking: {
-    words: number;
+    // words: number; (Aloglia supports dropping words, we don't)
     attribute: SEARCH_ATTRIBUTES_ORDERED[number];
     proximity: number;
     exact: number;
@@ -172,12 +183,11 @@ function extendSearchRanking(result: SearchResult): ExtendedSearchResult {
   return {
     ...result,
     ranking: {
-      words: 0, // matchedWords(result), NOT USED for AND
-      attribute: matchedAttribute(result),
+      ...matchedAttributePosition(result),
       proximity: wordsProximity(result, 8), // TODO
       exact: matchedExactWords(result),
       level: TYPE_WEIGHTS.get(result.type),
-      position: result.position,
+      appearance: result.position,
     },
   };
 }
@@ -203,8 +213,15 @@ function cmpRanking(left: ExtendedSearchResult, right: ExtendedSearchResult) {
   if (leftRank.level !== rightRank.level) {
     return cmp(rightRank.level, leftRank.level);
   }
-  if (leftRank.position !== rightRank.position) {
+  if (
+    leftRank.position != null &&
+    rightRank.position != null &&
+    leftRank.position !== rightRank.position
+  ) {
     return cmp(leftRank.position, rightRank.position);
+  }
+  if (leftRank.appearance !== rightRank.appearance) {
+    return cmp(leftRank.appearance, rightRank.appearance);
   }
 
   return 0;
