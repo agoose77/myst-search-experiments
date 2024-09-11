@@ -279,7 +279,7 @@ function cmpRankedSearchResults(
   const rightRank = right.ranking;
 
   if (leftRank.typos !== rightRank.typos) {
-    return cmp(leftRank.typos, leftRank.typos);
+    return cmp(leftRank.typos, rightRank.typos);
   }
   if (leftRank.attribute !== rightRank.attribute) {
     const i = SEARCH_ATTRIBUTES_ORDERED.findIndex(
@@ -302,7 +302,7 @@ function cmpRankedSearchResults(
     return cmp(leftRank.proximity, rightRank.proximity);
   }
   if (leftRank.exact !== rightRank.exact) {
-    return cmp(leftRank.exact, rightRank.exact);
+    return cmp(rightRank.exact, leftRank.exact);
   }
   if (leftRank.level !== rightRank.level) {
     return cmp(rightRank.level, leftRank.level);
