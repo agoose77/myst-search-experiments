@@ -26,15 +26,6 @@ function singlePairProximity(left: string, right: string): number {
 
 }
 
-function wordsProximity(words: string[]) {
-  let proximity = 0;
-  for (let i=0; i < words.length - 1; i++) {
-    const left = words[i];
-    const right = words[i+1];
-
-    proximity += singlePairProximity(left, right);
-  } 
-}
 */
 
 function cmp(left: number, right: number): number {
@@ -47,6 +38,69 @@ function cmp(left: number, right: number): number {
   }
 }
 
+function queryPairProximity(
+  record: SearchResult,
+  left: Query,
+  right: Query,
+  bound: number
+): number {
+  let bestProximity = bound;
+  // For each term in the left query
+  for (const [leftTerm, leftFields] of Object.entries(left.matches)) {
+    const leftPattern = new RegExp(`\\b${leftTerm}\\b`, "gi");
+    // For each field matched with this left term
+    for (const leftField of leftFields) {
+      // Pull out the left field content
+      const content = extractField(record, leftField);
+      // For each term in the right query
+      for (const [rightTerm, rightFields] of Object.entries(right.matches)) {
+        const rightPattern = new RegExp(`\\b${rightTerm}\\b`, "gi");
+        // For each field matched with this right term
+        for (const rightField of rightFields) {
+          // Terms matching different fields can never be better than the bound
+          if (leftField !== rightField) {
+            continue;
+          }
+          // Math each content with the appropriate pattern
+          const leftMatches = content.matchAll(leftPattern);
+          const rightMatches = content.matchAll(rightPattern);
+
+          for (const leftMatch of leftMatches) {
+            for (const rightMatch of rightMatches) {
+              const [start, stop] =
+                leftMatch.index < rightMatch.index
+                  ? [leftMatch.index, rightMatch.index]
+                  : [rightMatch.index, leftMatch.index];
+              const separators = Array.from(
+                content.slice(start, stop).matchAll(SPACE_OR_PUNCTUATION)
+              ).length;
+              // Fast-path, can never beat 1!
+              if (separators === 1) {
+                return 1;
+              }
+              if (separators < bestProximity) {
+                bestProximity = separators;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return bestProximity;
+}
+
+function wordsProximity(result: SearchResult, bound: number) {
+  const { queries } = result;
+  let proximity = 0;
+  for (let i = 0; i < queries.length - 1; i++) {
+    const left = queries[i];
+    const right = queries[i + 1];
+
+    proximity += queryPairProximity(result, left, right, bound);
+  }
+  return Math.min(proximity, bound);
+}
 function matchedAttributes(result: SearchResult): string[] {
   return Array.from(
     new Set(result.queries.flatMap((query) => Object.values(query.matches).flat()))
@@ -120,7 +174,7 @@ function extendSearchRanking(result: SearchResult): ExtendedSearchResult {
     ranking: {
       words: 0, // matchedWords(result), NOT USED for AND
       attribute: matchedAttribute(result),
-      proximity: 8, // TODO
+      proximity: wordsProximity(result, 8), // TODO
       exact: matchedExactWords(result),
       level: TYPE_WEIGHTS.get(result.type),
       position: result.position,
