@@ -121,7 +121,7 @@ function MySTSearch({ documents }: { documents: SearchDocument[] }) {
       storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
       idField: "id",
       searchOptions: {
-        fuzzy: 0.15,
+        fuzzy: 0.2,
         prefix: true,
       },
       extractField,
