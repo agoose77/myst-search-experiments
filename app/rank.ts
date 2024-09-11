@@ -255,9 +255,9 @@ function rankSearchResult(result: SearchResult): RankedSearchResult {
   return {
     ...result,
     ranking: {
+      typos: numberOfTypos(result),
       ...matchedAttributePosition(result),
       proximity: wordsProximity(result, 8), // TODO
-      typos: numberOfTypos(result),
       exact: matchedExactWords(result),
       level: TYPE_WEIGHTS.get(result.type),
       appearance: result.position,
@@ -278,10 +278,6 @@ function cmpRankedSearchResults(
   const leftRank = left.ranking;
   const rightRank = right.ranking;
 
-  if (leftRank.words !== rightRank.words) {
-    // Invert result
-    return cmp(rightRank.words, leftRank.words);
-  }
   if (leftRank.typos !== rightRank.typos) {
     return cmp(leftRank.typos, leftRank.typos);
   }
@@ -295,15 +291,21 @@ function cmpRankedSearchResults(
 
     return cmp(i, j);
   }
-  if (leftRank.level !== rightRank.level) {
-    return cmp(rightRank.level, leftRank.level);
-  }
   if (
     leftRank.position != null &&
     rightRank.position != null &&
     leftRank.position !== rightRank.position
   ) {
     return cmp(leftRank.position, rightRank.position);
+  }
+  if (leftRank.proximity !== rightRank.proximity) {
+    return cmp(leftRank.proximity, rightRank.proximity);
+  }
+  if (leftRank.exact !== rightRank.exact) {
+    return cmp(leftRank.exact, rightRank.exact);
+  }
+  if (leftRank.level !== rightRank.level) {
+    return cmp(rightRank.level, leftRank.level);
   }
   if (leftRank.appearance !== rightRank.appearance) {
     return cmp(leftRank.appearance, rightRank.appearance);

@@ -31,6 +31,7 @@ type SearchState = {
 function createSearchState(documents: SearchDocument[], rawOptions: Options) {
   const options = extendDefaultOptions(rawOptions);
   const search = createSearch(documents, options);
+  console.log({documents})
   return { options, search };
 }
 
