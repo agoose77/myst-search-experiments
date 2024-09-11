@@ -52,10 +52,9 @@ export type SearchResult = {
 export function combineResults(
   results: Map<string, Map<string, RawSearchResult>>
 ) {
-  const queryTerms = Array.from(results.keys());
   const [firstEntry, ...restEntries] = results.entries();
 
-  const [firstTerm, firstRawResults] = firstEntry;
+  const [_, firstRawResults] = firstEntry;
   const initialValue = new Map<string, SearchResult>(
     Array.from(firstRawResults.entries(), ([id, rawResult]) => {
       const { score, terms, queryTerms, match, ...rest } = rawResult;
@@ -81,7 +80,7 @@ export function combineResults(
     ) => {
       const nextAccumulator = new Map<string, SearchResult>();
 
-      const [term, rawResults] = value;
+      const [_, rawResults] = value;
       rawResults.forEach((rawResult, docID) => {
         const existing = accumulator.get(docID);
         if (existing == null) {

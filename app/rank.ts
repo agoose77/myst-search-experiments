@@ -5,6 +5,7 @@ import {
   SEARCH_ATTRIBUTES_ORDERED,
 } from "./search.js";
 
+// Weights that prioritise headings over content
 const TYPE_WEIGHTS = new Map([
   ["lvl1", 90],
   ["lvl2", 80],
@@ -15,13 +16,12 @@ const TYPE_WEIGHTS = new Map([
   ["content", 0],
 ]);
 
-/**
-function singlePairProximity(left: string, right: string): number {
-
-}
-
-*/
-
+/*
+ * Generic `cmp` helper function
+ *
+ * @param left - left value
+ * @param right - right value
+ */
 function cmp(left: number, right: number): number {
   if (left < right) {
     return -1;
@@ -32,46 +32,79 @@ function cmp(left: number, right: number): number {
   }
 }
 
+/**
+ * Build a RegExp that matches a single TOKEN bounded by SPACE_OR_PUNCTUATION, or string boundaries
+ *
+ * @param text - text to match, e.g. ` foo `, ` foo bar `, `foo bar`
+ */
+function buildRegExpToken(token: text): RegExp {
+  return new RegExp(
+    `(?:(?:${SPACE_OR_PUNCTUATION.source})|^)${token}(?:(?:${SPACE_OR_PUNCTUATION.source})|$)`,
+    `${SPACE_OR_PUNCTUATION.flags}i`
+  );
+}
+
+/**
+ * Compute the proximity between two queries, bounded by a limit
+ *
+ * @param record - parent search record
+ * @param left - first query
+ * @param right - second query
+ * @param bound - upper limit on computed proximity
+ */
 function queryPairProximity(
   record: SearchResult,
   left: Query,
   right: Query,
   bound: number
 ): number {
+  // TODO: this is highly-nested, and probably slow
+  //       it should be re-written for performance
   let bestProximity = bound;
+
   // For each term in the left query
   for (const [leftTerm, leftFields] of Object.entries(left.matches)) {
-    const leftPattern = new RegExp(`\\b${leftTerm}\\b`, "gi");
+    const leftPattern = buildRegExpToken(leftTerm);
+
     // For each field matched with this left term
     for (const leftField of leftFields) {
-      // Pull out the left field content
+      // Pull out the (left) field content
       const content = extractField(record, leftField);
+
       // For each term in the right query
       for (const [rightTerm, rightFields] of Object.entries(right.matches)) {
-        const rightPattern = new RegExp(`\\b${rightTerm}\\b`, "gi");
+        const rightPattern = buildRegExpToken(rightTerm);
         // For each field matched with this right term
         for (const rightField of rightFields) {
           // Terms matching different fields can never be better than the bound
           if (leftField !== rightField) {
             continue;
           }
-          // Math each content with the appropriate pattern
+
+          // Find all of the matches in the content for each pattern
           const leftMatches = content.matchAll(leftPattern);
           const rightMatches = content.matchAll(rightPattern);
 
+          // Iterate over match pairs
           for (const leftMatch of leftMatches) {
             for (const rightMatch of rightMatches) {
+              // Find the ordered (start, stop) pairs for these two matches
               const [start, stop] =
                 leftMatch.index < rightMatch.index
                   ? [leftMatch.index, rightMatch.index]
                   : [rightMatch.index, leftMatch.index];
+
+              // Identify how many token separators there are in this range
               const numSeparators = Array.from(
                 content.slice(start, stop).matchAll(SPACE_OR_PUNCTUATION)
               ).length;
+
               // Fast-path, can never beat 1!
               if (numSeparators === 1) {
                 return 1;
               }
+
+              // Does this result improve our current proximity?
               if (numSeparators < bestProximity) {
                 bestProximity = numSeparators;
               }
@@ -84,6 +117,12 @@ function queryPairProximity(
   return bestProximity;
 }
 
+/**
+ * Compute the associative pair-wise proximity of a search result
+ *
+ * @param result - search result
+ * @param bound - upper bound on final proximity
+ */
 function wordsProximity(result: SearchResult, bound: number) {
   const { queries } = result;
   let proximity = 0;
@@ -95,16 +134,15 @@ function wordsProximity(result: SearchResult, bound: number) {
   }
   return Math.min(proximity, bound);
 }
-function matchedAttributes(result: SearchResult): string[] {
-  return Array.from(
-    new Set(
-      result.queries.flatMap((query) => Object.values(query.matches).flat())
-    )
-  );
-}
 
+/**
+ * Identify the best-matched attribute and the match position
+ *
+ * @param result - search result
+ */
 function matchedAttributePosition(result: SearchResult): number {
   // Build mapping from fields to terms matching that field
+  // i.e. invert and flatten `result.queries[...].matches`
   const fieldToTerms = new Map();
   result.queries.forEach((query) =>
     Object.entries(query.matches).forEach(([term, fields]) =>
@@ -124,22 +162,32 @@ function matchedAttributePosition(result: SearchResult): number {
     fieldToTerms.has(field)
   );
 
-  // If this field is positional, find the start of the text match
   let position;
+  // If this field is positional, find the start of the text match
   if (attribute.startsWith("$")) {
+    // Find the terms that this field matches
     const attributeTerms = fieldToTerms.get(attribute)!;
+    // Extract the field value
     const value = extractField(result, attribute);
+    // Match each term against the field value, and extract the match position
     const matchPositions = attributeTerms
-      .flatMap((term) => Array.from(value.matchAll(new RegExp(`\\b${term}\\b`, "gi"))))
+      .flatMap((term) => Array.from(value.matchAll(buildRegExpToken(term))))
       .map((match) => match.index);
+    // Find the smallest (earliest) match position
     position = Math.min(...matchPositions);
-  } else {
+  }
+  // Otherwise, we don't care about the position
+  else {
     position = undefined;
   }
 
   return { attribute, position };
 }
-
+/**
+ * Determine how many terms matched the corpus exactly
+ *
+ * @param result - search result
+ */
 function matchedExactWords(result: SearchResult) {
   const allMatches = result.queries.flatMap(
     // For each query (foo bar baz -> foo, then bar, then baz)
@@ -148,8 +196,7 @@ function matchedExactWords(result: SearchResult) {
         .flatMap(
           // For each (match, matched fields) pair in the query matches
           ([match, fields]) => {
-            // TODO check the tokenizer behaviour here
-            const pattern = new RegExp(`\\b${match}\\b`, "gi");
+            const pattern = buildRegExpToken(match);
             return fields.flatMap(
               // For each matched field
               (field) => {
@@ -168,7 +215,26 @@ function matchedExactWords(result: SearchResult) {
   return uniqueMatches.size;
 }
 
-export type ExtendedSearchResult = SearchResult & {
+/**
+ * Determine the number of fuzzy matches in a search result
+ *
+ * @param result - search result
+ */
+function numberOfTypos(result: SearchResult): number {
+  return result.queries
+    .map((query) => {
+      const typoTerms = Object.keys(query.matches).filter(
+        (match) => match !== query.term
+      );
+      return typoTerms.length;
+    })
+    .reduce((sum, value) => sum + value);
+}
+
+/**
+ * Type describing a seach result that has ranking
+ */
+export type RankedSearchResult = SearchResult & {
   ranking: {
     // words: number; (Aloglia supports dropping words, we don't)
     attribute: SEARCH_ATTRIBUTES_ORDERED[number];
@@ -180,16 +246,12 @@ export type ExtendedSearchResult = SearchResult & {
   };
 };
 
-function numberOfTypos(result: SearchResult): number {
-  return result.queries.map(query => {
-    const typoTerms = Object.keys(query.matches).filter(match => match !== query.term);
-    return typoTerms.length;
-  }).reduce(
-    (sum, value) => sum + value
-  );
-}
-
-function extendSearchRanking(result: SearchResult): ExtendedSearchResult {
+/**
+ * Rank a search result using Algolia-derived metrics
+ *
+ * @param result - search result
+ */
+function rankSearchResult(result: SearchResult): RankedSearchResult {
   return {
     ...result,
     ranking: {
@@ -203,7 +265,16 @@ function extendSearchRanking(result: SearchResult): ExtendedSearchResult {
   };
 }
 
-function cmpRanking(left: ExtendedSearchResult, right: ExtendedSearchResult) {
+/**
+ * Compare ranked search results to prioritise higher rankings
+ *
+ * @param left - ranked search result
+ * @param right - ranked search result
+ */
+function cmpRankedSearchResults(
+  left: RankedSearchResult,
+  right: RankedSearchResult
+) {
   const leftRank = left.ranking;
   const rightRank = right.ranking;
 
@@ -241,11 +312,12 @@ function cmpRanking(left: ExtendedSearchResult, right: ExtendedSearchResult) {
   return 0;
 }
 
-export type SearchResult = SearchRecord & {
-  match: Record<string, string[]>;
-  terms: string[];
-};
 
-export function rankAndFilterResults(results: SearchResult[]): SearchResult[] {
-  return results.map(extendSearchRanking).sort(cmpRanking);
+/**
+ * Rank and then filter raw search results
+ */
+export function rankAndFilterResults(
+  results: SearchResult[]
+): RankedSearchResult[] {
+  return results.map(rankSearchResult).sort(cmpRankedSearchResults);
 }
