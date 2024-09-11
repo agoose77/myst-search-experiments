@@ -7,11 +7,13 @@ import {
   SEARCH_ATTRIBUTES_ORDERED,
   SPACE_OR_PUNCTUATION,
   extractField,
-  rankAndFilterResults,
-  type ExtendedSearchResult,
+  extendDefaultOptions,
+  createSearch,
+  combineResults,
 } from "../search.js";
+import { rankAndFilterResults, type ExtendedSearchResult } from "../rank.js";
 import React from "react";
-import MiniSearch, { Options } from "minisearch";
+import MiniSearch, { type Options } from "minisearch";
 
 export const meta: MetaFunction = () => {
   return [
@@ -20,30 +22,53 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-function useRankedSearch(documents: SearchDocument[], options: Options) {
-  const [search] = React.useState<MiniSearch>(() => {
-    const _search = new MiniSearch(options);
-    _search.addAll(documents);
-    return _search;
-  });
+type SearchState = {
+  documents: SearchDocument[];
+  options: Options;
+  search: MiniSearch;
+};
+
+function createSearchState(documents: SearchDocument[], rawOptions: Options) {
+  const options = extendDefaultOptions(rawOptions);
+  const search = createSearch(documents, options);
+  return { options, search };
+}
+
+function useRankedSearch(documents: SearchDocument[], rawOptions: Options) {
+  const [searchState, setSearchState] = React.useState<SearchState>(() =>
+    createSearchState(documents, rawOptions)
+  );
+  React.useEffect(
+    () => setSearchState(createSearchState(documents, rawOptions)),
+    [rawOptions, documents]
+  );
 
   const [results, setResults] = React.useState<ExtendedSearchResult[]>([]);
   const doSearch = React.useCallback(
     (query: string) => {
-      const tokenizer = MiniSearch.getDefault("tokenize");
-      const queryTokens = tokenizer(query);
-      const rawResults = search.search(query);
-      const results = rankAndFilterResults(rawResults, queryTokens);
+      const { search, options } = searchState;
+      // Implement executeQuery whilst retaining distinction between terms
+      // TODO: should we check for unique terms?
+      const terms = options.tokenize(query);
+      const termResults = new Map(
+        terms.map((term) => [
+          term,
+          new Map(search.search(term).map((doc) => [doc.id, doc])),
+        ])
+      );
+      const rawResults = combineResults(termResults);
+      const results = rankAndFilterResults(rawResults);
       setResults(results);
+      console.log(results)
     },
-    [search]
+    [searchState]
   );
 
   return [doSearch, results];
 }
 
 function highlightTitle(text: string, result: ExtendedSearchResult) {
-  const allTerms = result.terms.join("|");
+  const allTerms = result.queries.flatMap(query => Object.keys(query.matches)).join("|");
   const pattern = new RegExp(`\\b(${allTerms})\\b`, "gi");
   const allMatches = Array.from(text.matchAll(pattern)).map((m) => m);
 
@@ -89,23 +114,27 @@ function resultRenderer(result: ExtendedSearchResult) {
 }
 
 function MySTSearch({ documents }: { documents: SearchDocument[] }) {
-  const miniSearchOptions = {
-    fields: SEARCH_ATTRIBUTES_ORDERED,
-    storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
-    idField: "id",
-    searchOptions: {
-      fuzzy: 0.15,
-      prefix: true,
-      combineWith: "or",
-    },
-    extractField,
-  };
+  const miniSearchOptions = React.useMemo(
+    () => ({
+      fields: SEARCH_ATTRIBUTES_ORDERED,
+      storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
+      idField: "id",
+      searchOptions: {
+        fuzzy: 0.15,
+        prefix: true,
+      },
+      extractField,
+    }),
+    []
+  );
   const [search, searchResults] = useRankedSearch(documents, miniSearchOptions);
 
   const [query, setQuery] = React.useState<string>();
   React.useEffect(() => {
     const timeoutId = setTimeout(() => {
-      search(query);
+      if (query != undefined) {
+        search(query);
+      }
     }, 500);
     return () => clearTimeout(timeoutId);
   }, [search, query]);
