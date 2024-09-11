@@ -172,6 +172,7 @@ export type ExtendedSearchResult = SearchResult & {
   ranking: {
     // words: number; (Aloglia supports dropping words, we don't)
     attribute: SEARCH_ATTRIBUTES_ORDERED[number];
+    typos: number;
     proximity: number;
     exact: number;
     level: number;
@@ -179,12 +180,22 @@ export type ExtendedSearchResult = SearchResult & {
   };
 };
 
+function numberOfTypos(result: SearchResult): number {
+  return result.queries.map(query => {
+    const typoTerms = Object.keys(query.matches).filter(match => match !== query.term);
+    return typoTerms.length;
+  }).reduce(
+    (sum, value) => sum + value
+  );
+}
+
 function extendSearchRanking(result: SearchResult): ExtendedSearchResult {
   return {
     ...result,
     ranking: {
       ...matchedAttributePosition(result),
       proximity: wordsProximity(result, 8), // TODO
+      typos: numberOfTypos(result),
       exact: matchedExactWords(result),
       level: TYPE_WEIGHTS.get(result.type),
       appearance: result.position,
@@ -199,6 +210,9 @@ function cmpRanking(left: ExtendedSearchResult, right: ExtendedSearchResult) {
   if (leftRank.words !== rightRank.words) {
     // Invert result
     return cmp(rightRank.words, leftRank.words);
+  }
+  if (leftRank.typos !== rightRank.typos) {
+    return cmp(leftRank.typos, leftRank.typos);
   }
   if (leftRank.attribute !== rightRank.attribute) {
     const i = SEARCH_ATTRIBUTES_ORDERED.findIndex(
