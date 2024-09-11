@@ -25,7 +25,7 @@ async function loadPagesFromXref(baseURL: string) {
 }
 
 export type RecordHierarchy = {
-  lvl1: string;
+  lvl1?: string;
   lvl2?: string;
   lvl3?: string;
   lvl4?: string;
@@ -37,7 +37,7 @@ type HeadingLevel = "lvl1" | "lvl2" | "lvl3" | "lvl4" | "lvl5" | "lvl6";
 
 export type SearchRecord = {
   type: "content" | HeadingLevel;
-  content: string;
+  content?: string;
   hierarchy: Heirarchy;
   url: string;
 
@@ -68,7 +68,7 @@ function sectionToHeadingLevel(heading: HeadingInfo | undefined): HeadingLevel {
 }
 
 function buildHierarchy(
-  title: string,
+  title: string | undefined,
   sections: Section,
   index: number
 ): RecordHierarchy {
@@ -94,7 +94,7 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
   return pages
     .map((doc) => {
       const { mdast, slug, frontmatter } = doc;
-      const title = frontmatter.title;
+      const title = frontmatter?.title;
 
       // Remove heading-like nodes
       remove(mdast, [
@@ -109,10 +109,6 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
       // Group by section (simple running accumulator)
       const sections = toSectionedParts(mdast);
       const pageURL = `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`;
-      if (title.includes("Math")) {
-        console.log(sections.map((sec) => sec.heading));
-      }
-
       // Build sections into search records
       return sections
         .map((section, index) => {
@@ -127,7 +123,6 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
           return [
             {
               hierarchy,
-              content: "",
               type: lvl,
               url: recordURL,
               position: 2 * index,
