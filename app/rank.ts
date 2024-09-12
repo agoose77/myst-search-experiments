@@ -16,6 +16,8 @@ const TYPE_WEIGHTS = new Map([
   ["content", 0],
 ]);
 
+type AttributeType = (typeof SEARCH_ATTRIBUTES_ORDERED)[number];
+
 /*
  * Generic `cmp` helper function
  *
@@ -37,7 +39,7 @@ function cmp(left: number, right: number): number {
  *
  * @param text - text to match, e.g. ` foo `, ` foo bar `, `foo bar`
  */
-function buildRegExpToken(token: text): RegExp {
+function buildRegExpToken(token: string): RegExp {
   return new RegExp(
     `(?:(?:${SPACE_OR_PUNCTUATION.source})|^)${token}(?:(?:${SPACE_OR_PUNCTUATION.source})|$)`,
     `${SPACE_OR_PUNCTUATION.flags}i`
@@ -140,10 +142,13 @@ function wordsProximity(result: SearchResult, bound: number) {
  *
  * @param result - search result
  */
-function matchedAttributePosition(result: SearchResult): number {
+function matchedAttributePosition(result: SearchResult): {
+  attribute: AttributeType;
+  position: number | undefined;
+} {
   // Build mapping from fields to terms matching that field
   // i.e. invert and flatten `result.queries[...].matches`
-  const fieldToTerms = new Map();
+  const fieldToTerms = new Map<string, string[]>();
   result.queries.forEach((query) =>
     Object.entries(query.matches).forEach(([term, fields]) =>
       fields.forEach((field) => {
@@ -160,7 +165,7 @@ function matchedAttributePosition(result: SearchResult): number {
   // Find first field that we matched
   const attribute = SEARCH_ATTRIBUTES_ORDERED.find((field) =>
     fieldToTerms.has(field)
-  );
+  )!;
 
   let position;
   // If this field is positional, find the start of the text match
@@ -171,7 +176,12 @@ function matchedAttributePosition(result: SearchResult): number {
     const value = extractField(result, attribute);
     // Match each term against the field value, and extract the match position
     const matchPositions = attributeTerms
-      .flatMap((term) => Array.from(value.matchAll(buildRegExpToken(term))))
+      .flatMap(
+        (term) =>
+          Array.from(value.matchAll(buildRegExpToken(term))) as {
+            index: number;
+          }[]
+      )
       .map((match) => match.index);
     // Find the smallest (earliest) match position
     position = Math.min(...matchPositions);
@@ -237,12 +247,13 @@ function numberOfTypos(result: SearchResult): number {
 export type RankedSearchResult = SearchResult & {
   ranking: {
     // words: number; (Aloglia supports dropping words, we don't)
-    attribute: SEARCH_ATTRIBUTES_ORDERED[number];
     typos: number;
+    attribute: AttributeType;
+    position?: number;
     proximity: number;
     exact: number;
     level: number;
-    position: number;
+    appearance: number;
   };
 };
 
@@ -259,7 +270,7 @@ function rankSearchResult(result: SearchResult): RankedSearchResult {
       ...matchedAttributePosition(result),
       proximity: wordsProximity(result, 8), // TODO
       exact: matchedExactWords(result),
-      level: TYPE_WEIGHTS.get(result.type),
+      level: TYPE_WEIGHTS.get(result.type)!,
       appearance: result.position,
     },
   };
@@ -313,7 +324,6 @@ function cmpRankedSearchResults(
 
   return 0;
 }
-
 
 /**
  * Rank and then filter raw search results

@@ -1,4 +1,4 @@
-import { toSectionedParts, type Section } from "./utils.js";
+import { toSectionedParts, type Section, type HeadingInfo } from "./utils.js";
 import { remove } from "unist-util-remove";
 
 /**
@@ -35,17 +35,23 @@ export type RecordHierarchy = {
   lvl6?: string;
 };
 
-type HeadingLevel = "lvl1" | "lvl2" | "lvl3" | "lvl4" | "lvl5" | "lvl6";
+export type HeadingLevel = keyof RecordHierarchy;
 
 export type SearchRecord = {
-  type: "content" | HeadingLevel;
-  content?: string;
-  hierarchy: Heirarchy;
-  url: string;
+  hierarchy: RecordHierarchy;
+  url: URL;
 
   position: number;
   id: string;
-};
+} & (
+  | {
+      type: HeadingLevel;
+    }
+  | {
+      type: "content";
+      "$content": string;
+    }
+);
 
 const INDEX_NAMES = ["index", "main"];
 
@@ -93,6 +99,9 @@ function buildHierarchy(
   // The first section is always the title section
   for (let i = index; i > 0; i--) {
     const { heading } = sections[i];
+    if (heading === undefined) {
+      throw new Error();
+    }
     if (heading.depth >= currentDepth) {
       continue;
     }
@@ -109,7 +118,9 @@ function buildHierarchy(
  *
  * @param url - the base URL of the MyST site
  */
-export async function searchRecordsFromXrefs(url: URL): SearchRecord[] {
+export async function searchRecordsFromXrefs(
+  url: URL
+): Promise<SearchRecord[]> {
   if (!url.pathname.endsWith("/")) {
     url.pathname = `${url.pathname}/`;
   }
@@ -121,12 +132,8 @@ export async function searchRecordsFromXrefs(url: URL): SearchRecord[] {
 
       // Remove heading-like nodes
       remove(mdast, [
-        "code",
         //"inlineCode",
         "myst",
-        "admonitionTitle",
-        "cardTitle",
-        (node) => node.type === "tableCell" && node?.header,
       ]);
 
       // Group by section (simple running accumulator)
@@ -153,8 +160,8 @@ export async function searchRecordsFromXrefs(url: URL): SearchRecord[] {
             },
             {
               hierarchy,
-              content: section.parts.join(""),
-              type: "content",
+              "$content": section.parts.join(""),
+              type: "content" as SearchRecord["type"],
               url: recordURL,
               position: 2 * index + 1,
               id: `${pageURL}#${recordOffset + 1}`,

@@ -2,7 +2,11 @@ import type { MetaFunction, LinksFunction } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import type { ClientLoaderFunctionArgs } from "@remix-run/react";
 import { Icon } from "semantic-ui-react";
-import { searchRecordsFromXrefs } from "../loadDocuments.js";
+import {
+  searchRecordsFromXrefs,
+  type SearchRecord,
+  type HeadingLevel,
+} from "../loadDocuments.js";
 import {
   SEARCH_ATTRIBUTES_ORDERED,
   SPACE_OR_PUNCTUATION,
@@ -10,8 +14,10 @@ import {
   extendDefaultOptions,
   createSearch,
   combineResults,
+  type ExtendedOptions,
+  type RawSearchResult,
 } from "../search.js";
-import { rankAndFilterResults, type ExtendedSearchResult } from "../rank.js";
+import { rankAndFilterResults, type RankedSearchResult } from "../rank.js";
 import React from "react";
 import MiniSearch, { type Options } from "minisearch";
 
@@ -22,20 +28,24 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-type SearchState = {
-  documents: SearchDocument[];
-  options: Options;
-  search: MiniSearch;
-};
-
-function createSearchState(documents: SearchDocument[], rawOptions: Options) {
+function createSearchState(
+  records: SearchRecord[],
+  rawOptions: Options
+): SearchState {
   const options = extendDefaultOptions(rawOptions);
-  const search = createSearch(documents, options);
-  console.log({ documents });
+  const search = createSearch(records, options);
   return { options, search };
 }
 
-function useRankedSearch(documents: SearchDocument[], rawOptions: Options) {
+type SearchState = {
+  options: ExtendedOptions;
+  search: MiniSearch;
+};
+
+function useRankedSearch(
+  documents: SearchRecord[],
+  rawOptions: Options
+): [(query: string) => void, RankedSearchResult[]] {
   const [searchState, setSearchState] = React.useState<SearchState>(() =>
     createSearchState(documents, rawOptions)
   );
@@ -44,17 +54,20 @@ function useRankedSearch(documents: SearchDocument[], rawOptions: Options) {
     [rawOptions, documents]
   );
 
-  const [results, setResults] = React.useState<ExtendedSearchResult[]>([]);
-  const doSearch = React.useCallback(
+  const [results, setResults] = React.useState<RankedSearchResult[]>([]);
+  const doSearch = React.useCallback<(query: string) => void>(
     (query: string) => {
       const { search, options } = searchState;
+      console.trace(searchState);
       // Implement executeQuery whilst retaining distinction between terms
       // TODO: should we check for unique terms?
       const terms = options.tokenize(query);
       const termResults = new Map(
         terms.map((term) => [
           term,
-          new Map(search.search(term).map((doc) => [doc.id, doc])),
+          new Map(
+            search.search(term).map((doc) => [doc.id, doc as RawSearchResult])
+          ),
         ])
       );
       const rawResults = combineResults(termResults);
@@ -68,7 +81,7 @@ function useRankedSearch(documents: SearchDocument[], rawOptions: Options) {
   return [doSearch, results];
 }
 
-function highlightTitle(text: string, result: ExtendedSearchResult) {
+function highlightTitle(text: string, result: RankedSearchResult): string {
   const allTerms = result.queries
     .flatMap((query) => Object.keys(query.matches))
     .join("|");
@@ -77,8 +90,10 @@ function highlightTitle(text: string, result: ExtendedSearchResult) {
 
   const { index: start } = allMatches[0] ?? { index: 0 };
 
-  const tokens = Array.from(text.slice(start).matchAll(SPACE_OR_PUNCTUATION));
-  tokens.push({ index: text.length - start });
+  const tokens = [
+    ...text.slice(start).matchAll(SPACE_OR_PUNCTUATION),
+    { index: text.length - start },
+  ];
 
   const limitedTokens = tokens.slice(0, 16);
   const { index: offset } = limitedTokens[limitedTokens.length - 1];
@@ -96,13 +111,15 @@ function highlightTitle(text: string, result: ExtendedSearchResult) {
   return title;
 }
 
-function resultRenderer(result: ExtendedSearchResult) {
-  const { hierarchy, content, type, url, id } = result;
+function resultRenderer(result: RankedSearchResult) {
+  const { hierarchy, type, url, id } = result;
   // Generic "this document matched"
   const kind =
     type === "content" ? "text" : type === "lvl1" ? "file" : "heading";
   const title = highlightTitle(
-    type === "content" ? content : hierarchy[type],
+    result.type === "content"
+      ? result['$content']
+      : hierarchy[type as HeadingLevel]!,
     result
   );
 
@@ -111,16 +128,16 @@ function resultRenderer(result: ExtendedSearchResult) {
   return (
     <span key={id}>
       <Icon name={icon} />
-      <a dangerouslySetInnerHTML={{ __html: title }} href={url} />
+      <a dangerouslySetInnerHTML={{ __html: title }} href={url.toString()} />
     </span>
   );
 }
 
-function MySTSearch({ documents }: { documents: SearchDocument[] }) {
+function MySTSearch({ documents }: { documents: SearchRecord[] }) {
   const miniSearchOptions = React.useMemo(
-    () => ({
-      fields: SEARCH_ATTRIBUTES_ORDERED,
-      storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
+    (): Options => ({
+      fields: SEARCH_ATTRIBUTES_ORDERED as any as string[],
+      storeFields: ["hierarchy", "$content", "url", "type", "id", "position"],
       idField: "id",
       searchOptions: {
         fuzzy: 0.2,
@@ -142,7 +159,7 @@ function MySTSearch({ documents }: { documents: SearchDocument[] }) {
     return () => clearTimeout(timeoutId);
   }, [search, query]);
 
-  const handleSearchChange = (event) => {
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setQuery(event.target.value);
   };
 
@@ -181,6 +198,6 @@ export const links: LinksFunction = () => {
 };
 
 export default function Index() {
-  const { documents } = useLoaderData<typeof loader>();
+  const { documents } = useLoaderData<typeof clientLoader>();
   return <MySTSearch documents={documents} />;
 }
