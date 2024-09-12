@@ -4,18 +4,20 @@ import { remove } from "unist-util-remove";
 /**
  * Load MyST site page data from a website deployed with myst.xref.json
  *
- * @param baseURL - base URL of the MyST site.
+ * @param url - URL of the MyST site.
  */
-async function loadPagesFromXref(baseURL: string) {
-  const xrefURL = `${baseURL}/myst.xref.json`;
+async function loadPagesFromXref(url: URL) {
+  const xrefURL = new URL(`myst.xref.json`, url);
   console.log("Fetching", xrefURL);
 
   const xrefResponse = await fetch(xrefURL);
   const xrefData = await xrefResponse.json();
-  const locations = xrefData.references
-    .filter((r: { kind: string }) => r.kind === "page")
-    .map((r: { data: string }) => `${baseURL}${r.data}`) as string[];
-
+  const pages = xrefData.references.filter(
+    (r: { kind: string }) => r.kind === "page"
+  );
+  const locations = pages.map(
+    (r: { data: string }) => new URL(r.data.slice(1), url)
+  ) as URL[];
   return await Promise.all(
     locations.map(async (path) => {
       const response = await fetch(path);
@@ -47,6 +49,11 @@ export type SearchRecord = {
 
 const INDEX_NAMES = ["index", "main"];
 
+/**
+ * Determine the "level" of a heading as a literal type
+ *
+ * @param heading - heading info object
+ */
 function sectionToHeadingLevel(heading: HeadingInfo | undefined): HeadingLevel {
   if (!heading) {
     return "lvl1";
@@ -67,9 +74,17 @@ function sectionToHeadingLevel(heading: HeadingInfo | undefined): HeadingLevel {
   }
 }
 
+/**
+ * Build a RecordHierarchy object describing the hierarchy of headings
+ * in an array of appearance-ordered sections.
+ *
+ * @param title - document title
+ * @param sections - array of section
+ * @param index - current section position
+ */
 function buildHierarchy(
   title: string | undefined,
-  sections: Section,
+  sections: Section[],
   index: number
 ): RecordHierarchy {
   const result: RecordHierarchy = { lvl1: title };
@@ -89,8 +104,16 @@ function buildHierarchy(
   return result;
 }
 
-export async function loadDocuments(baseURL: string): SearchRecord[] {
-  const pages = await loadPagesFromXref(baseURL);
+/**
+ * Build array of search records from a deployed MyST site
+ *
+ * @param url - the base URL of the MyST site
+ */
+export async function searchRecordsFromXrefs(url: URL): SearchRecord[] {
+  if (!url.pathname.endsWith("/")) {
+    url.pathname = `${url.pathname}/`;
+  }
+  const pages = await loadPagesFromXref(url);
   return pages
     .map((doc) => {
       const { mdast, slug, frontmatter } = doc;
@@ -103,27 +126,27 @@ export async function loadDocuments(baseURL: string): SearchRecord[] {
         "myst",
         "admonitionTitle",
         "cardTitle",
-	(node) => node.type === "tableCell" && node?.header
+        (node) => node.type === "tableCell" && node?.header,
       ]);
 
       // Group by section (simple running accumulator)
       const sections = toSectionedParts(mdast);
-      const pageURL = `${baseURL}/${INDEX_NAMES.includes(slug) ? "" : slug}`;
+      const pageURL = new URL(INDEX_NAMES.includes(slug) ? "" : slug, url);
       // Build sections into search records
       return sections
         .map((section, index) => {
           const hierarchy = buildHierarchy(title, sections, index);
-          const lvl = sectionToHeadingLevel(section.heading);
-          const recordURL = section.heading
-            ? section.heading.html_id
-              ? `${pageURL}#${section.heading.html_id}`
-              : `${pageURL}`
-            : pageURL;
+
+          const recordURL = new URL(pageURL);
+          if (section.heading?.html_id) {
+            recordURL.hash = `#${section.heading.html_id}`;
+          }
+
           const recordOffset = index * 2;
           return [
             {
               hierarchy,
-              type: lvl,
+              type: sectionToHeadingLevel(section.heading),
               url: recordURL,
               position: 2 * index,
               id: `${pageURL}#${recordOffset}`,

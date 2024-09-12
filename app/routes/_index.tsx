@@ -2,7 +2,7 @@ import type { MetaFunction, LinksFunction } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import type { ClientLoaderFunctionArgs } from "@remix-run/react";
 import { Icon } from "semantic-ui-react";
-import { loadDocuments } from "../loadDocuments.js";
+import { searchRecordsFromXrefs } from "../loadDocuments.js";
 import {
   SEARCH_ATTRIBUTES_ORDERED,
   SPACE_OR_PUNCTUATION,
@@ -31,7 +31,7 @@ type SearchState = {
 function createSearchState(documents: SearchDocument[], rawOptions: Options) {
   const options = extendDefaultOptions(rawOptions);
   const search = createSearch(documents, options);
-  console.log({documents})
+  console.log({ documents });
   return { options, search };
 }
 
@@ -60,7 +60,7 @@ function useRankedSearch(documents: SearchDocument[], rawOptions: Options) {
       const rawResults = combineResults(termResults);
       const results = rankAndFilterResults(rawResults);
       setResults(results);
-      console.log(results)
+      console.log(results);
     },
     [searchState]
   );
@@ -69,7 +69,9 @@ function useRankedSearch(documents: SearchDocument[], rawOptions: Options) {
 }
 
 function highlightTitle(text: string, result: ExtendedSearchResult) {
-  const allTerms = result.queries.flatMap(query => Object.keys(query.matches)).join("|");
+  const allTerms = result.queries
+    .flatMap((query) => Object.keys(query.matches))
+    .join("|");
   const pattern = new RegExp(`\\b(${allTerms})\\b`, "gi");
   const allMatches = Array.from(text.matchAll(pattern)).map((m) => m);
 
@@ -161,8 +163,12 @@ function MySTSearch({ documents }: { documents: SearchDocument[] }) {
 
 export const clientLoader = async ({ request }: ClientLoaderFunctionArgs) => {
   const url = new URL(request.url);
-  const baseURL = url.searchParams.get("url");
-  return { documents: baseURL ? await loadDocuments(baseURL) : [] };
+  const rawRemoteURL = url.searchParams.get("url");
+  return {
+    documents: rawRemoteURL
+      ? await searchRecordsFromXrefs(new URL(rawRemoteURL))
+      : [],
+  };
 };
 
 export const links: LinksFunction = () => {
