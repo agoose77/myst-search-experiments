@@ -131,7 +131,8 @@ export async function searchRecordsFromIndex(
   if (!response.ok) {
     throw new Error("Response was not OK");
   }
-  return await response.json();
+  const { records } = await response.json();
+  return records;
 }
 
 /**
