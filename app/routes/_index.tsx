@@ -4,6 +4,7 @@ import type { ClientLoaderFunctionArgs } from "@remix-run/react";
 import { Icon } from "semantic-ui-react";
 import {
   searchRecordsFromXrefs,
+  searchRecordsFromIndex,
   type SearchRecord,
   type HeadingLevel,
 } from "../loadDocuments.js";
@@ -111,14 +112,14 @@ function highlightTitle(text: string, result: RankedSearchResult): string {
   return title;
 }
 
-function resultRenderer(result: RankedSearchResult) {
+function resultRenderer(result: RankedSearchResult, remoteURL?: URL) {
   const { hierarchy, type, url, id } = result;
   // Generic "this document matched"
   const kind =
     type === "content" ? "text" : type === "lvl1" ? "file" : "heading";
   const title = highlightTitle(
     result.type === "content"
-      ? result['$content']
+      ? result["$content"]
       : hierarchy[type as HeadingLevel]!,
     result
   );
@@ -128,12 +129,21 @@ function resultRenderer(result: RankedSearchResult) {
   return (
     <span key={id}>
       <Icon name={icon} />
-      <a dangerouslySetInnerHTML={{ __html: title }} href={url.toString()} />
+      <a
+        dangerouslySetInnerHTML={{ __html: title }}
+        href={`${remoteURL}${url.slice(1)}`}
+      />
     </span>
   );
 }
 
-function MySTSearch({ documents }: { documents: SearchRecord[] }) {
+function MySTSearch({
+  documents,
+  url,
+}: {
+  documents: SearchRecord[];
+  url?: URL;
+}) {
   const miniSearchOptions = React.useMemo(
     (): Options => ({
       fields: SEARCH_ATTRIBUTES_ORDERED as any as string[],
@@ -171,7 +181,7 @@ function MySTSearch({ documents }: { documents: SearchRecord[] }) {
         <h3>Results:</h3>
         {searchResults &&
           searchResults.map((result, i) => {
-            return <li key={i}>{resultRenderer(result)}</li>;
+            return <li key={i}>{resultRenderer(result, url)}</li>;
           })}
       </ol>
     </div>
@@ -181,10 +191,16 @@ function MySTSearch({ documents }: { documents: SearchRecord[] }) {
 export const clientLoader = async ({ request }: ClientLoaderFunctionArgs) => {
   const url = new URL(request.url);
   const rawRemoteURL = url.searchParams.get("url");
+  if (!rawRemoteURL) {
+    return { documents: [], remoteURL: undefined };
+  }
+  const remoteURL = new URL(rawRemoteURL);
+  const documents = await searchRecordsFromIndex(remoteURL).catch(() =>
+    searchRecordsFromXrefs(remoteURL)
+  );
   return {
-    documents: rawRemoteURL
-      ? await searchRecordsFromXrefs(new URL(rawRemoteURL))
-      : [],
+    documents,
+    remoteURL,
   };
 };
 
@@ -198,6 +214,6 @@ export const links: LinksFunction = () => {
 };
 
 export default function Index() {
-  const { documents } = useLoaderData<typeof clientLoader>();
-  return <MySTSearch documents={documents} />;
+  const { documents, remoteURL } = useLoaderData<typeof clientLoader>();
+  return <MySTSearch documents={documents} url={remoteURL} />;
 }

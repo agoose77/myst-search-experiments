@@ -39,7 +39,7 @@ export type HeadingLevel = keyof RecordHierarchy;
 
 export type SearchRecord = {
   hierarchy: RecordHierarchy;
-  url: URL;
+  url: string;
 
   position: number;
   id: string;
@@ -49,7 +49,7 @@ export type SearchRecord = {
     }
   | {
       type: "content";
-      "$content": string;
+      $content: string;
     }
 );
 
@@ -118,6 +118,24 @@ function buildHierarchy(
  *
  * @param url - the base URL of the MyST site
  */
+
+export async function searchRecordsFromIndex(
+  url: URL
+): Promise<SearchRecord[] | undefined> {
+  const indexURL = new URL(`myst.search.json`, url);
+  console.log("Fetching", indexURL);
+  const response = await fetch(indexURL);
+  if (response === undefined) {
+    return undefined;
+  }
+  return await response.json();
+}
+
+/**
+ * Build array of search records from a deployed MyST site
+ *
+ * @param url - the base URL of the MyST site
+ */
 export async function searchRecordsFromXrefs(
   url: URL
 ): Promise<SearchRecord[]> {
@@ -138,31 +156,30 @@ export async function searchRecordsFromXrefs(
 
       // Group by section (simple running accumulator)
       const sections = toSectionedParts(mdast);
-      const pageURL = new URL(INDEX_NAMES.includes(slug) ? "" : slug, url);
+      const pageURL = INDEX_NAMES.includes(slug) ? "/" : `/${slug}`;
       // Build sections into search records
       return sections
         .map((section, index) => {
           const hierarchy = buildHierarchy(title, sections, index);
 
-          const recordURL = new URL(pageURL);
-          if (section.heading?.html_id) {
-            recordURL.hash = `#${section.heading.html_id}`;
-          }
+          const recordURL = section.heading?.html_id
+            ? `${pageURL}#${section.heading.html_id}`
+            : pageURL;
 
           const recordOffset = index * 2;
           return [
             {
               hierarchy,
               type: sectionToHeadingLevel(section.heading),
-              url: recordURL,
+              url: recordURL.toString(),
               position: 2 * index,
               id: `${pageURL}#${recordOffset}`,
             },
             {
               hierarchy,
-              "$content": section.parts.join(""),
+              $content: section.parts.join(""),
               type: "content" as SearchRecord["type"],
-              url: recordURL,
+              url: recordURL.toString(),
               position: 2 * index + 1,
               id: `${pageURL}#${recordOffset + 1}`,
             },

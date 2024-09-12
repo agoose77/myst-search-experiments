@@ -1,7 +1,6 @@
 import type { GenericNode } from "myst-common";
 import type { Heading } from "myst-spec";
 import { toText } from "myst-common";
-import { selectAll } from "unist-util-select";
 export const SKIP = () => {};
 
 type Visit = (content: GenericNode, path: string) => typeof SKIP | void;
@@ -74,7 +73,7 @@ export function toSectionedParts(content: GenericNode) {
   };
   newSection();
   const visit = (content: GenericNode) => {
-    if (content.type === "heading") {
+    if (content.type === "heading" || content.type === "myst") {
       newSection(content as Heading);
       return SKIP;
     }
@@ -98,8 +97,3 @@ export function toSectionedParts(content: GenericNode) {
   walk(content, visit, depart);
   return sections;
 }
-
-export type Corpus = {
-  text: string;
-  stops: number[];
-};
