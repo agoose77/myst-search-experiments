@@ -215,5 +215,5 @@ export const links: LinksFunction = () => {
 
 export default function Index() {
   const { documents, remoteURL } = useLoaderData<typeof clientLoader>();
-  return <MySTSearch documents={documents} url={remoteURL} />;
+  return <MySTSearch documents={documents ?? []} url={remoteURL} />;
 }

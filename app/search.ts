@@ -39,7 +39,7 @@ export function createSearch(
   options: Options
 ): MiniSearch {
   const search = new MiniSearch(options);
-  search.addAll(documents);
+  search.addAll(documents.map((doc, index) => ({ ...doc, id: index })));
   return search;
 }
 

@@ -11,6 +11,9 @@ async function loadPagesFromXref(url: URL) {
   console.log("Fetching", xrefURL);
 
   const xrefResponse = await fetch(xrefURL);
+  if (!xrefResponse.ok) {
+    throw new Error("Response was not OK");
+  }
   const xrefData = await xrefResponse.json();
   const pages = xrefData.references.filter(
     (r: { kind: string }) => r.kind === "page"
@@ -26,7 +29,7 @@ async function loadPagesFromXref(url: URL) {
   );
 }
 
-export type RecordHierarchy = {
+export type DocumentHierarchy = {
   lvl1?: string;
   lvl2?: string;
   lvl3?: string;
@@ -35,23 +38,23 @@ export type RecordHierarchy = {
   lvl6?: string;
 };
 
-export type HeadingLevel = keyof RecordHierarchy;
+export type HeadingLevel = keyof DocumentHierarchy;
 
-export type SearchRecord = {
-  hierarchy: RecordHierarchy;
+export type SearchRecordBase = {
+  hierarchy: DocumentHierarchy;
   url: string;
 
   position: number;
-  id: string;
-} & (
-  | {
-      type: HeadingLevel;
-    }
-  | {
-      type: "content";
-      $content: string;
-    }
-);
+};
+export type HeadingRecord = SearchRecordBase & {
+  type: HeadingLevel;
+};
+export type ContentRecord = SearchRecordBase & {
+  type: "content";
+  $content: string;
+};
+
+export type SearchRecord = ContentRecord | HeadingRecord;
 
 const INDEX_NAMES = ["index", "main"];
 
@@ -81,7 +84,7 @@ function sectionToHeadingLevel(heading: HeadingInfo | undefined): HeadingLevel {
 }
 
 /**
- * Build a RecordHierarchy object describing the hierarchy of headings
+ * Build a DocumentHierarchy object describing the hierarchy of headings
  * in an array of appearance-ordered sections.
  *
  * @param title - document title
@@ -92,8 +95,8 @@ function buildHierarchy(
   title: string | undefined,
   sections: Section[],
   index: number
-): RecordHierarchy {
-  const result: RecordHierarchy = { lvl1: title };
+): DocumentHierarchy {
+  const result: DocumentHierarchy = { lvl1: title };
   let currentDepth = 100;
 
   // The first section is always the title section
@@ -125,8 +128,8 @@ export async function searchRecordsFromIndex(
   const indexURL = new URL(`myst.search.json`, url);
   console.log("Fetching", indexURL);
   const response = await fetch(indexURL);
-  if (response === undefined) {
-    return undefined;
+  if (!response.ok) {
+    throw new Error("Response was not OK");
   }
   return await response.json();
 }
@@ -166,14 +169,12 @@ export async function searchRecordsFromXrefs(
             ? `${pageURL}#${section.heading.html_id}`
             : pageURL;
 
-          const recordOffset = index * 2;
           return [
             {
               hierarchy,
               type: sectionToHeadingLevel(section.heading),
               url: recordURL.toString(),
               position: 2 * index,
-              id: `${pageURL}#${recordOffset}`,
             },
             {
               hierarchy,
@@ -181,7 +182,6 @@ export async function searchRecordsFromXrefs(
               type: "content" as SearchRecord["type"],
               url: recordURL.toString(),
               position: 2 * index + 1,
-              id: `${pageURL}#${recordOffset + 1}`,
             },
           ];
         })
