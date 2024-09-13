@@ -3,15 +3,6 @@ import MiniSearch, {
   type SearchResult as MiniSearchResult,
 } from "minisearch";
 import { SearchRecord } from "./loadDocuments";
-export const SEARCH_ATTRIBUTES_ORDERED = [
-  "hierarchy.lvl1",
-  "hierarchy.lvl2",
-  "hierarchy.lvl3",
-  "hierarchy.lvl4",
-  "hierarchy.lvl5",
-  "hierarchy.lvl6",
-  "content",
-] as const;
 
 export type ExtendedOptions = Options &
   Required<Pick<Options, "tokenize" | "processTerm">>;

@@ -9,7 +9,6 @@ import {
   type HeadingLevel,
 } from "../loadDocuments.js";
 import {
-  SEARCH_ATTRIBUTES_ORDERED,
   SPACE_OR_PUNCTUATION,
   extractField,
   extendDefaultOptions,
@@ -18,7 +17,11 @@ import {
   type ExtendedOptions,
   type RawSearchResult,
 } from "../search.js";
-import { rankAndFilterResults, type RankedSearchResult } from "../rank.js";
+import {
+  rankAndFilterResults,
+  type RankedSearchResult,
+  SEARCH_ATTRIBUTES_ORDERED,
+} from "../rank.js";
 import React from "react";
 import MiniSearch, { type Options } from "minisearch";
 

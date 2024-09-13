@@ -1,9 +1,21 @@
 import type { Query, SearchResult } from "./search.js";
-import {
-  extractField,
-  SPACE_OR_PUNCTUATION,
-  SEARCH_ATTRIBUTES_ORDERED,
-} from "./search.js";
+import { extractField, SPACE_OR_PUNCTUATION } from "./search.js";
+
+export const SEARCH_ATTRIBUTES_ORDERED = [
+  "hierarchy.lvl1",
+  "hierarchy.lvl2",
+  "hierarchy.lvl3",
+  "hierarchy.lvl4",
+  "hierarchy.lvl5",
+  "hierarchy.lvl6",
+  "content",
+] as const;
+
+type AttributeType = (typeof SEARCH_ATTRIBUTES_ORDERED)[number];
+
+export const POSITIONAL_SEARCH_ATTRIBUTES: AttributeType[] = [
+  "content",
+] as const;
 
 // Weights that prioritise headings over content
 const TYPE_WEIGHTS = new Map([
@@ -15,8 +27,6 @@ const TYPE_WEIGHTS = new Map([
   ["lvl6", 40],
   ["content", 0],
 ]);
-
-type AttributeType = (typeof SEARCH_ATTRIBUTES_ORDERED)[number];
 
 /*
  * Generic `cmp` helper function
@@ -169,7 +179,7 @@ function matchedAttributePosition(result: SearchResult): {
 
   let position;
   // If this field is positional, find the start of the text match
-  if (attribute.startsWith("$")) {
+  if (POSITIONAL_SEARCH_ATTRIBUTES.includes(attribute)) {
     // Find the terms that this field matches
     const attributeTerms = fieldToTerms.get(attribute)!;
     // Extract the field value
