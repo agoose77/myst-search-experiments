@@ -18,7 +18,6 @@
     "isbot": "^4.1.0",
     "minisearch": "^7.1.0",
     "myst-common": "^1.6.0",
-    "myst-headings": "file:src",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "semantic-ui-react": "^3.0.0-beta.2",
