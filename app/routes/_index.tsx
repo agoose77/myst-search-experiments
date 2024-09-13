@@ -119,7 +119,7 @@ function resultRenderer(result: RankedSearchResult, remoteURL?: URL) {
     type === "content" ? "text" : type === "lvl1" ? "file" : "heading";
   const title = highlightTitle(
     result.type === "content"
-      ? result["$content"]
+      ? result["content"]
       : hierarchy[type as HeadingLevel]!,
     result
   );
@@ -147,7 +147,7 @@ function MySTSearch({
   const miniSearchOptions = React.useMemo(
     (): Options => ({
       fields: SEARCH_ATTRIBUTES_ORDERED as any as string[],
-      storeFields: ["hierarchy", "$content", "url", "type", "id", "position"],
+      storeFields: ["hierarchy", "content", "url", "type", "id", "position"],
       idField: "id",
       searchOptions: {
         fuzzy: 0.2,

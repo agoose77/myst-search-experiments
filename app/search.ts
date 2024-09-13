@@ -10,7 +10,7 @@ export const SEARCH_ATTRIBUTES_ORDERED = [
   "hierarchy.lvl4",
   "hierarchy.lvl5",
   "hierarchy.lvl6",
-  "$content",
+  "content",
 ] as const;
 
 export type ExtendedOptions = Options &

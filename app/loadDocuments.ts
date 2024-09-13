@@ -51,7 +51,7 @@ export type HeadingRecord = SearchRecordBase & {
 };
 export type ContentRecord = SearchRecordBase & {
   type: "content";
-  $content: string;
+  content: string;
 };
 
 export type SearchRecord = ContentRecord | HeadingRecord;
@@ -179,7 +179,7 @@ export async function searchRecordsFromXrefs(
             },
             {
               hierarchy,
-              $content: section.parts.join(""),
+              content: section.parts.join(""),
               type: "content" as SearchRecord["type"],
               url: recordURL.toString(),
               position: 2 * index + 1,
